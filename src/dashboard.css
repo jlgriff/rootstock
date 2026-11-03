@@ -14,7 +14,12 @@ h1 { font-size: clamp(24px, 4vw, 36px); letter-spacing: -.04em; margin: 0; }
 .summary strong { display: block; font-size: 28px; letter-spacing: -.04em; }
 .summary span { display: block; font-size: 13px; color: #61726b; margin-top: 5px; }
 .captured { font-size: 12px; margin: 24px 0 10px; overflow-wrap: anywhere; }
-.table-wrap { overflow-x: auto; background: #fff; border: 1px solid #dce4dc; border-radius: 8px; }
+.project { margin-top: 20px; background: #fff; border: 1px solid #dce4dc; border-radius: 8px; overflow: hidden; }
+.project-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 24px; }
+.project-heading h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
+.project-heading p { margin: 6px 0 0; color: #718078; font-size: 12px; overflow-wrap: anywhere; }
+.project-heading > span { color: #61726b; font-size: 13px; white-space: nowrap; }
+.table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
 th { background: #edf2ec; color: #53665a; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 th, td { padding: 15px 18px; vertical-align: top; }
@@ -29,4 +34,4 @@ small { display: block; color: #718078; font-size: 11px; margin-top: 5px; overfl
 .error h2 { margin-top: 0; font-size: 18px; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 footer { margin-top: 20px; font-size: 12px; }
-@media (max-width: 640px) { main { padding: 24px 16px; } .summary { gap: 8px; } .summary > div { min-width: 0; flex: 1; padding: 14px; } }
+@media (max-width: 640px) { main { padding: 24px 16px; } .summary { gap: 8px; } .summary > div { min-width: 0; flex: 1; padding: 14px; } .project-heading { flex-direction: column; align-items: flex-start; padding: 16px; } }

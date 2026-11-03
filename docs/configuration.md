@@ -361,8 +361,10 @@ No cloud-specific credentials or dashboard account are required.
 
 Status includes containers whose `com.docker.compose.project` label starts with `rootstock-`,
 including the shared proxy and projects absent from the local inventory. It groups containers by
-that project and uses `com.docker.compose.service` for the service name. Stopped and one-off
-containers remain visible until removed. Unrelated Compose projects and unlabelled containers are
+that project and uses `com.docker.compose.service` for the service name. The browser shows one
+heading per project, with a running/total container count and its container rows underneath.
+The top-level project count includes shared infrastructure. Stopped and one-off containers remain
+visible until removed. Unrelated Compose projects and unlabelled containers are
 outside this view. Local app folders without containers appear as `not deployed`; if the inventory
 directory is absent, live discovery still works. Status reads folder registration and optional
 `rootstock.toml` settings, but does not resolve Compose files or require their environment secrets.

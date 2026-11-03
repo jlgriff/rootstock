@@ -25,7 +25,7 @@ fn document(content: &str, refresh: u64) -> String {
 <meta http-equiv="refresh" content="{refresh}"><title>Rootstock · Status</title><style>{}</style></head>
 <body><main><header class="heading"><div><p class="eyebrow">Rootstock</p><h1>Application status</h1></div>
 <a href="/" class="refresh">Refresh now</a></header>
-<p class="intro">Live Docker state. Apps share public ports through the proxy; internal ports belong to each container.</p>
+<p class="intro">Each project groups related containers for an app or shared infrastructure. Each row below a project is one container.</p>
 {content}<footer>Refreshes every {refresh} seconds. Current container health does not verify public reachability.</footer>
 </main></body></html>"#,
         include_str!("dashboard.css")
@@ -42,36 +42,38 @@ fn render(snapshot: &Snapshot, refresh: u64) -> String {
         .filter(|service| service.state == "running")
         .count();
     let mut content = format!(
-        r#"<div class="summary"><div><strong>{}</strong><span>Applications</span></div>
+        r#"<div class="summary"><div><strong>{}</strong><span>Compose projects</span></div>
 <div><strong>{running}</strong><span>Running containers</span></div><div><strong>{total}</strong><span>Total containers</span></div></div>
-<p class="captured">Snapshot: {}</p><div class="table-wrap"><table><thead><tr>
-<th>App</th><th>Service</th><th>State / health</th><th>Domains</th><th>Internal ports</th><th>Host ports</th>
-<th>Uptime</th><th>Restarts</th><th>RAM / limit</th><th>CPU</th></tr></thead><tbody>"#,
+<p class="captured">Snapshot: {}</p>"#,
         snapshot.apps.len(),
         escape(&snapshot.captured_at)
     );
-    for app in &snapshot.apps {
+    for (index, app) in snapshot.apps.iter().enumerate() {
         let registration = if app.configured {
             "In local inventory"
         } else {
             "Discovered on host"
         };
-        let app_cell = format!(
-            "<strong>{}</strong><small>{registration}</small>",
-            escape(&app.name)
-        );
+        let running = app
+            .services
+            .iter()
+            .filter(|service| service.state == "running")
+            .count();
+        content.push_str(&format!(r#"<section class="project" aria-labelledby="project-{index}">
+<header class="project-heading"><div><h2 id="project-{index}">{}</h2><p>{} · {registration}</p></div>
+<span>Containers: {running} running / {} total</span></header>"#, escape(&app.name), escape(&app.project), app.services.len()));
         if app.services.is_empty() {
-            content.push_str(&format!(
-                "<tr><td>{app_cell}</td><td colspan=\"9\" class=\"muted\">Not deployed</td></tr>"
-            ));
+            content.push_str("<p class=\"empty\">Not deployed</p></section>");
+            continue;
         }
+        content.push_str("<div class=\"table-wrap\"><table><thead><tr><th>Service / container</th><th>State / health</th><th>Domains</th><th>Internal ports</th><th>Host ports</th><th>Uptime</th><th>Restarts</th><th>RAM / limit</th><th>CPU</th></tr></thead><tbody>");
         for service in &app.services {
             let state_class = match (service.state.as_str(), service.health.as_deref()) {
                 ("running", Some("unhealthy")) | ("restarting", _) => "warning",
                 ("running", _) => "running",
                 _ => "muted",
             };
-            content.push_str(&format!("<tr><td>{app_cell}</td><td><strong>{}</strong><small>{}</small></td><td><span class=\"{state_class}\">{}</span><small>{}</small></td>",
+            content.push_str(&format!("<tr><td><strong>{}</strong><small>{}</small></td><td><span class=\"{state_class}\">{}</span><small>{}</small></td>",
                 escape(&service.service), escape(&service.container), escape(&service.state), escape(service.health.as_deref().unwrap_or("No healthcheck"))));
             let values = [
                 service.domain_status(),
@@ -100,11 +102,11 @@ fn render(snapshot: &Snapshot, refresh: u64) -> String {
             }
             content.push_str("</tr>");
         }
+        content.push_str("</tbody></table></div></section>");
     }
     if snapshot.apps.is_empty() {
-        content.push_str("<tr><td colspan=\"10\" class=\"empty\">No rootstock applications found on this host or in the local inventory.</td></tr>");
+        content.push_str("<p class=\"empty\">No rootstock projects found on this host or in the local inventory.</p>");
     }
-    content.push_str("</tbody></table></div>");
     document(&content, refresh)
 }
 
