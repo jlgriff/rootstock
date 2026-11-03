@@ -1,0 +1,32 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #20332e; background: #f4f6f2; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1600px; margin: 0 auto; padding: 48px 32px; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.eyebrow { color: #47745c; text-transform: uppercase; font-size: 12px; font-weight: 700; letter-spacing: .16em; margin: 0 0 10px; }
+h1 { font-size: clamp(24px, 4vw, 36px); letter-spacing: -.04em; margin: 0; }
+.intro, footer, .captured { color: #61726b; font-size: 14px; line-height: 1.6; }
+.intro { margin: 16px 0 28px; max-width: 760px; }
+.refresh { color: #234f39; text-decoration: none; border: 1px solid #cbd8ce; border-radius: 6px; padding: 10px 16px; background: #fff; white-space: nowrap; font-size: 14px; }
+.refresh:hover, .refresh:focus-visible { border-color: #47745c; background: #edf4ed; }
+.summary { display: flex; gap: 16px; flex-wrap: wrap; }
+.summary > div { background: #fff; border: 1px solid #dce4dc; border-radius: 8px; padding: 20px 24px; min-width: 180px; }
+.summary strong { display: block; font-size: 28px; letter-spacing: -.04em; }
+.summary span { display: block; font-size: 13px; color: #61726b; margin-top: 5px; }
+.captured { font-size: 12px; margin: 24px 0 10px; overflow-wrap: anywhere; }
+.table-wrap { overflow-x: auto; background: #fff; border: 1px solid #dce4dc; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+th { background: #edf2ec; color: #53665a; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+th, td { padding: 15px 18px; vertical-align: top; }
+td { border-top: 1px solid #e8ede7; font-variant-numeric: tabular-nums; }
+td strong { font-weight: 600; }
+small { display: block; color: #718078; font-size: 11px; margin-top: 5px; overflow-wrap: anywhere; }
+.running { color: #27683c; }
+.warning { color: #986014; }
+.muted { color: #718078; }
+.empty { padding: 48px 24px; text-align: center; color: #718078; }
+.error { padding: 20px; background: #fff6e8; border: 1px solid #e6c995; border-radius: 8px; }
+.error h2 { margin-top: 0; font-size: 18px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+footer { margin-top: 20px; font-size: 12px; }
+@media (max-width: 640px) { main { padding: 24px 16px; } .summary { gap: 8px; } .summary > div { min-width: 0; flex: 1; padding: 14px; } }

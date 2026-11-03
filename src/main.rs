@@ -4,7 +4,7 @@ use std::process::Command as Process;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use rootstock::inventory::App;
-use rootstock::{compose, inventory, validate};
+use rootstock::{compose, dashboard, inventory, status, validate};
 
 #[derive(Parser)]
 #[command(version, about = "Coordinates the applications sharing one Linux VM")]
@@ -23,6 +23,21 @@ enum Command {
     List,
     /// Reports routing conflicts without changing anything.
     Check,
+    /// Reports live containers, domains, ports, health, and resource usage.
+    Status {
+        /// Print the snapshot as JSON instead of a table.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Serves an on-demand status page on local loopback.
+    Observe {
+        /// Local HTTP port; zero chooses an available port.
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
+        /// Seconds between browser refreshes.
+        #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
+        refresh: u64,
+    },
     /// Brings one application up under its own Compose project.
     Deploy {
         /// The application to deploy.
@@ -87,22 +102,31 @@ fn run(args: &[String], dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-/// Validates application ownership before dispatching the requested operation.
+/// Runs inventory, deployment, or live observation with the required application settings.
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let apps = inventory::load(&cli.apps)?;
-
     match cli.command {
-        Command::List => list(&apps),
+        Command::List => list(&inventory::load(&cli.apps)?),
         Command::Check => {
+            let apps = inventory::load(&cli.apps)?;
             ensure_no_conflicts(&apps)?;
             println!("{} application(s), no conflicts", apps.len());
         }
         Command::Deploy { name, dry_run } => {
+            let apps = inventory::load(&cli.apps)?;
             ensure_no_conflicts(&apps)?;
             let app = find(&apps, &name)?;
             run(&compose::up_args(&app.discovered), dry_run)?;
         }
+        Command::Status { json } => {
+            let snapshot = status::collect(&cli.apps)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&snapshot)?);
+            } else {
+                print!("{}", status::table(&snapshot));
+            }
+        }
+        Command::Observe { port, refresh } => dashboard::serve(&cli.apps, port, refresh)?,
     }
     Ok(())
 }

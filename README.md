@@ -35,6 +35,19 @@ or use an existing Docker host. Application configuration and deploy commands st
 Copy the example into another `apps/<name>` directory to add an app. Real application inventories,
 environment files, and infrastructure stack settings are gitignored.
 
+## See what is running
+
+```sh
+cargo run -- status
+cargo run -- status --json
+DOCKER_HOST=ssh://deploy@host.example.com cargo run -- observe
+```
+
+`status` shows live services, domains, internal and published ports, health, uptime, RAM, and CPU.
+`observe` prints a local browser URL with the same information and refreshes every ten seconds.
+Stop it with Ctrl-C. Both use your selected Docker host; the browser view adds no service to the VM.
+See [status configuration](docs/configuration.md#live-status-and-local-dashboard) for details.
+
 ## Try routing locally
 
 With a local Docker engine running:

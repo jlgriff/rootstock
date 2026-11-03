@@ -33,6 +33,11 @@ and use `target/release/rootstock`. `--help` and `--version` are available.
 | `--apps <directory>` | Global inventory directory; defaults to `apps` |
 | `list` | Lists applications, Compose project names, and resolved domains |
 | `check` | Refuses conflicting domains and invalid public routing declarations |
+| `status` | Reports live app containers, domains, ports, health, uptime, restarts, RAM, and CPU |
+| `status --json` | Emits the same snapshot as structured JSON |
+| `observe` | Serves a local browser view that queries the selected Docker host |
+| `observe --port <port>` | Local loopback HTTP port; defaults to `8787`; `0` selects an available port |
+| `observe --refresh <seconds>` | Browser refresh interval; defaults to `10`; minimum `1` |
 | `deploy <name>` | Validates the whole inventory, then deploys one application |
 | `deploy <name> --dry-run` | Resolves configuration and prints the command without starting containers |
 
@@ -341,10 +346,85 @@ DOCKER_HOST=ssh://deploy@host.example.com docker compose \
 Use the health URL your application implements; the demonstration Nginx image serves `/`.
 Application logs, readiness, backups, and restore procedures remain application responsibilities.
 
+## Live status and local dashboard
+
+```sh
+DOCKER_HOST=ssh://deploy@host.example.com cargo run -- status
+DOCKER_HOST=ssh://deploy@host.example.com cargo run -- status --json
+DOCKER_HOST=ssh://deploy@host.example.com cargo run -- observe --port 8787 --refresh 10
+```
+
+These commands use the Docker CLI and inherit its current context, `DOCKER_HOST`, `DOCKER_CONTEXT`,
+TLS settings, and SSH authentication. An exported `DOCKER_CONTEXT` overrides `DOCKER_HOST`.
+Use a local engine such as OrbStack by leaving the remote settings unset and selecting its context.
+No cloud-specific credentials or dashboard account are required.
+
+Status includes containers whose `com.docker.compose.project` label starts with `rootstock-`,
+including the shared proxy and projects absent from the local inventory. It groups containers by
+that project and uses `com.docker.compose.service` for the service name. Stopped and one-off
+containers remain visible until removed. Unrelated Compose projects and unlabelled containers are
+outside this view. Local app folders without containers appear as `not deployed`; if the inventory
+directory is absent, live discovery still works. Status reads folder registration and optional
+`rootstock.toml` settings, but does not resolve Compose files or require their environment secrets.
+Only containers on the selected Docker engine are observed.
+
+Domains come from live Traefik labels. Unsupported routing rules produce a per-service
+`routing_error` while the container remains visible. `check` and `deploy` retain their strict routing
+validation. Domains in a status snapshot describe declared routing; they do not prove DNS, TLS,
+public reachability, or the proxy's active configuration.
+
+Internal ports combine Docker's exposed-port metadata, current port mappings, and Traefik's
+`loadbalancer.server.port` labels. Host ports are published Docker bindings, shown with the internal
+port they target. Multiple isolated apps can listen internally on `3000/tcp` while the proxy shares
+host ports `80` and `443` across their domains. An app without published bindings can still be
+reachable through Traefik. The view does not scan sockets or enumerate host-network listeners;
+metadata alone does not prove a process is listening on a port.
+
+Health is Docker's last recorded healthcheck status. An absent check is shown explicitly. Uptime
+is elapsed time since the current running container's start, not its creation. Restart counts are
+Docker's container restart counts and reset when a container is recreated. Resource usage comes
+from `docker stats --no-stream`: memory follows Docker's Linux cache adjustment, and the displayed
+limit is the container's limit or the Docker host's memory when unrestricted. It is not reserved
+memory. Stopped containers and missing samples have unavailable metrics rather than zero.
+Container memory does not include all host overhead.
+
+`observe` prints `http://127.0.0.1:<port>/` and stays running on the client until Ctrl-C. Open that
+URL locally. It binds only to IPv4 loopback, accepts localhost/loopback Host headers, and adds no
+public route or browser password gate to deployed apps. Each page load collects a fresh snapshot;
+the page refreshes after the configured interval. Collection is serial, so slow Docker or SSH calls
+delay the page. Docker failures produce HTTP 503 with an error; a CLI status failure exits nonzero.
+No previous snapshot is presented as current after a failed collection.
+
+The page uses embedded CSS and server-rendered HTML, with no JavaScript, external assets, database,
+or metrics history. Responses disable browser caching. Only selected status fields reach the page
+or JSON output; container environments, complete labels, mounts, and credentials are excluded.
+The collector issues read-only `ps`, `inspect`, and `stats` calls. It performs no app lifecycle
+actions. No dashboard container, agent, Rust runtime, or extra port is installed on the serving VM;
+active queries briefly use its existing Docker/SSH infrastructure.
+
+### JSON snapshot
+
+| Field | Meaning |
+| --- | --- |
+| `captured_at` | UTC RFC 3339 timestamp after collection; container data and metrics are sampled across separate calls |
+| `apps` | Applications sorted by Compose project; an empty array means none were found |
+| `apps[].name`, `project` | App name and full Compose project identifier |
+| `apps[].configured` | Whether that project has a folder in the local `--apps` inventory |
+| `apps[].services` | Containers sorted by service and container name; empty for a registered app with no containers |
+| `services[].service`, `container` | Compose service and Docker container name |
+| `services[].state`, `health` | Docker state and nullable healthcheck status |
+| `services[].uptime_seconds` | Nonnegative elapsed seconds for a running container; otherwise `null` |
+| `services[].restart_count` | Docker restart count for this container |
+| `services[].domains`, `routing_error` | Declared hostnames and a nullable route-parsing error |
+| `services[].ports[].internal` | Container port and protocol, such as `3000/tcp` |
+| `services[].ports[].published` | Host bindings for that port, such as `127.0.0.1:8080` or `[::]:8080`; empty for unpublished ports |
+| `services[].memory`, `cpu` | Docker-formatted current memory/limit and CPU percentage strings; `null` when unavailable |
+
 ## Resource measurements
 
-Rootstock exits after each command. Shared resident services are Docker, Traefik, and the socket
-proxy. Applications can each be a single release-built server with bundled assets. Avoid runtime
+Rootstock exits after each command except the optional local `observe` session. Shared resident
+services are Docker, Traefik, and the socket proxy. Applications can each be a single release-built
+server with bundled assets. Avoid runtime
 compilation or extra sidecars unless the workload requires them.
 
 ```sh
