@@ -2,6 +2,8 @@
 
 Rootstock exposes local MCP tools and a local HTML console. Application APIs hosted through
 Traefik belong to their applications and are not Rootstock endpoints.
+The [Leptos example](../examples/leptos/README.md#configuration-and-http-reference) documents its
+own page and health routes.
 
 | Interface | Operations | Access |
 | --- | --- | --- |

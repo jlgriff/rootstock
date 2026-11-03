@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Exclude optional examples
+        run: rm -rf "${GITHUB_WORKSPACE:?}/examples"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -25,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Exclude optional examples
+        run: rm -rf "${GITHUB_WORKSPACE:?}/examples"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.9.3
       - run: ./tests/acceptance/run.sh
@@ -36,6 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Exclude optional examples
+        run: rm -rf "${GITHUB_WORKSPACE:?}/examples"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl
@@ -57,6 +63,8 @@ jobs:
         working-directory: infra
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Exclude optional examples
+        run: rm -rf "${GITHUB_WORKSPACE:?}/examples"
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: '26'

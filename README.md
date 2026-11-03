@@ -12,7 +12,7 @@ Docker Desktop works for development.
 
 ```sh
 mkdir -p apps
-cp -R examples/web apps/web
+cp -R templates/web apps/web
 cp apps/web/.env.example apps/web/.env
 ```
 
@@ -70,9 +70,13 @@ Docker socket proxy. Measure idle and loaded memory before deciding how many app
 
 ## Reference and development
 
+Reusable deployment assets live in `templates/`. Applications in `examples/` are optional and
+independent of the core workspace.
+
 - [Complete configuration reference](docs/configuration.md): CLI, app images, routing, environment,
   server setup, infrastructure settings, releases, rollback, and resource measurements.
-- [Example application](examples/web/compose.yml) and [infrastructure template](infra/Pulumi.example.yaml).
+- [Web deployment template](templates/web/compose.yml) and [infrastructure template](infra/Pulumi.example.yaml).
+- [Leptos + Tailwind example](examples/leptos/README.md): a small Rust "under construction" site with a container image and healthcheck.
 - [SQLite + Litestream template](docs/sqlite-litestream.md): persistent databases, off-host backups,
   and recovery before app startup.
 - [API reference](docs/api.md): every MCP tool and console HTTP route, with schemas, arguments,

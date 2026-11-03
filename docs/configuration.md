@@ -4,8 +4,8 @@
 
 | Path | Purpose | Committed? |
 | --- | --- | --- |
-| `examples/web/compose.yml` | Generic web application template | Yes |
-| `examples/web/.env.example` | Sample image, domain, and port | Yes |
+| `templates/web/compose.yml` | Generic web application template | Yes |
+| `templates/web/.env.example` | Sample image, domain, and port | Yes |
 | `apps/<name>/compose.yml` | Your application's deployment definition | No |
 | `apps/<name>/.env` | Image reference, domain, and Compose interpolation settings | No |
 | `apps/<name>/rootstock.toml` | Enabled Compose profiles, if needed | No |
@@ -69,7 +69,7 @@ manifest fields, such as routes or static-directory paths, do not configure root
 
 ## Application image and environment
 
-The public example uses these Compose variables:
+The web deployment template uses these Compose variables:
 
 | Variable | Required? | Meaning |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ The public example uses these Compose variables:
 | `APP_PORT` | No | Port the server listens on inside its container; defaults to `3000` |
 | `COMPOSE_PROJECT_NAME` | Automatic | Compose sets it from rootstock's `--project-name`; namespaces router and service labels |
 
-The example `.env.example` uses `nginx:alpine` on port `80` as a runnable demonstration. Its
+The template's `.env.example` uses `nginx:alpine` on port `80` as a runnable demonstration. Its
 floating tag is not a production release policy. Replace it with your application's versioned
 image and actual port. Missing or empty required variables fail during configuration resolution.
 
@@ -97,7 +97,7 @@ Define an image `HEALTHCHECK` for application readiness, for example against a `
 Include the program the healthcheck invokes; a minimal image need not contain a shell or curl.
 Without a healthcheck, Compose's `--wait` establishes only that the container is running.
 
-The example always pulls the chosen image and restarts the container unless explicitly stopped.
+The template always pulls the chosen image and restarts the container unless explicitly stopped.
 It publishes no host port and has no persistent volume. Add application-owned volumes when data
 must survive releases. Avoid fixed `container_name` values or globally shared volume names.
 Bind mounts refer to the target engine's filesystem, not your workstation, during remote deployment.
@@ -114,7 +114,7 @@ opt-in: add and attach a Traefik authentication middleware in that application's
 configuration only when wanted.
 
 Applications must join the external `rootstock-proxy` network and opt in with `traefik.enable=true`.
-The example creates router and service names from `${COMPOSE_PROJECT_NAME}-web`, so copying it for
+The template creates router and service names from `${COMPOSE_PROJECT_NAME}-web`, so copying it for
 another application cannot reuse those identifiers. Give each additional public service its own
 unique router and service name.
 
@@ -440,6 +440,12 @@ on ARM64 and x86-64; it needs a POSIX shell, curl, and `sha256sum` or `shasum`. 
 needed only for the initial download. Tailwind and Node are not needed in the browser or on the
 serving VM, and no npm installation is required for this styling workflow. When upgrading Tailwind,
 update the pinned version and checksums in `tools/styles.sh`, then regenerate and review the CSS.
+
+The same tool accepts `--input <stylesheet>` and `--output <generated-css>` for another Rust
+application, including the [Leptos example](../examples/leptos/README.md#styling-and-development).
+Paths are relative to the Rootstock checkout. The defaults are `styles/dashboard.css` and
+`src/dashboard.css`; `--check` compares the selected output without modifying it, and `--watch`
+passes through to Tailwind for continuous generation.
 
 ### JSON snapshot
 

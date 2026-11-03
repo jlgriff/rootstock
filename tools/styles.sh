@@ -2,6 +2,18 @@
 set -eu
 cd -- "$(dirname -- "$0")/.."
 
+input=styles/dashboard.css
+destination=src/dashboard.css
+check=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --input) input=$2; shift 2 ;;
+    --output) destination=$2; shift 2 ;;
+    --check) check=true; shift ;;
+    *) break ;;
+  esac
+done
+
 version=4.3.4
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64) platform=macos-arm64; checksum=a516a11b439bfbb5ecd4a2d13b75e6cdcc284dc710aed8731e31d2e5c03895a4 ;;
@@ -33,14 +45,13 @@ if [ ! -x "$binary" ]; then
   trap - EXIT
 fi
 
-output=src/dashboard.css
-if [ "${1-}" = --check ]; then
-  shift
+output=$destination
+if "$check"; then
   output=$(mktemp)
   trap 'rm -f "$output"' EXIT
 fi
-"$binary" --input styles/dashboard.css --output "$output" --minify "$@"
-if [ "$output" != src/dashboard.css ] && ! cmp -s "$output" src/dashboard.css; then
-  echo 'Dashboard CSS is stale. Run ./tools/styles.sh and include src/dashboard.css.' >&2
+"$binary" --input "$input" --output "$output" --minify "$@"
+if "$check" && ! cmp -s "$output" "$destination"; then
+  echo "Stylesheet is stale: $destination. Rebuild it with ./tools/styles.sh using the same --input and --output." >&2
   exit 1
 fi

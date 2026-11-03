@@ -1,0 +1,30 @@
+name: Examples
+
+on:
+  push:
+    branches: [main]
+    paths: ['examples/**', 'tools/styles.sh', '.github/workflows/examples.yml']
+  pull_request:
+    paths: ['examples/**', 'tools/styles.sh', '.github/workflows/examples.yml']
+
+jobs:
+  leptos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        if: hashFiles('examples/leptos/Cargo.toml') != ''
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2.9.3
+        if: hashFiles('examples/leptos/Cargo.toml') != ''
+        with:
+          workspaces: examples/leptos -> target
+      - name: Check the optional Leptos example
+        if: hashFiles('examples/leptos/Cargo.toml') != ''
+        run: |
+          ./tools/styles.sh --input examples/leptos/styles/tailwind.css --output examples/leptos/src/site.css --check
+          cargo fmt --manifest-path examples/leptos/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path examples/leptos/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path examples/leptos/Cargo.toml
+          docker build --tag rootstock-leptos:test examples/leptos
