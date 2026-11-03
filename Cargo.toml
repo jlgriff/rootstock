@@ -7,15 +7,19 @@ license = "MIT"
 readme = "README.md"
 
 [workspace]
-members = ["tests/sqlite"]
+members = ["mcp", "tests/sqlite"]
 default-members = ["."]
 resolver = "3"
+
+[features]
+api-schema = ["dep:schemars"]
 
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.6", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+schemars = { version = "1.2.3", optional = true }
 tempfile = "3.27.0"
 time = { version = "0.3.55", features = ["parsing", "formatting"] }
 tiny_http = "0.12.0"

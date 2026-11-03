@@ -51,6 +51,10 @@ runs `docker compose up -d --wait --remove-orphans` with the same directory, pro
 It never removes volumes. `--remove-orphans` removes services no longer in that application's
 Compose definition. An empty inventory contains no applications; it is not proof of a deployment.
 
+The optional [MCP adapter](mcp.md) is a separate binary and reuses the same inventory, validation,
+status collector, and deployment planner. Its tools and the console's HTTP route have an
+[API reference](api.md), including machine-readable schemas and error contracts.
+
 ### Profiles
 
 An optional `rootstock.toml` has one supported setting:

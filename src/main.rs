@@ -4,7 +4,7 @@ use std::process::Command as Process;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use rootstock::inventory::App;
-use rootstock::{compose, dashboard, inventory, status, validate};
+use rootstock::{dashboard, deployment, inventory, status, validate};
 
 #[derive(Parser)]
 #[command(version, about = "Coordinates the applications sharing one Linux VM")]
@@ -62,13 +62,6 @@ fn ensure_no_conflicts(apps: &[App]) -> Result<()> {
     bail!("{} routing conflicts, nothing deployed", conflicts.len())
 }
 
-/// Finds the one application a command names, so an unknown name fails before anything runs.
-fn find<'a>(apps: &'a [App], name: &str) -> Result<&'a App> {
-    apps.iter()
-        .find(|app| app.discovered.name == name)
-        .with_context(|| format!("no application named `{name}` under the applications directory"))
-}
-
 /// Prints each application with the domains Traefik will route to it.
 fn list(apps: &[App]) {
     for app in apps {
@@ -114,9 +107,8 @@ fn main() -> Result<()> {
         }
         Command::Deploy { name, dry_run } => {
             let apps = inventory::load(&cli.apps)?;
-            ensure_no_conflicts(&apps)?;
-            let app = find(&apps, &name)?;
-            run(&compose::up_args(&app.discovered), dry_run)?;
+            let plan = deployment::plan(&apps, &name)?;
+            run(&plan.docker_args, dry_run)?;
         }
         Command::Status { json } => {
             let snapshot = status::collect(&cli.apps)?;
