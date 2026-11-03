@@ -231,6 +231,7 @@ Example snapshot:
       "uptime_seconds": 120,
       "restart_count": 0,
       "domains": ["app.example.com"],
+      "links": ["https://app.example.com/"],
       "routing_error": null,
       "ports": [{"internal": "3000/tcp", "published": []}],
       "memory": "4MiB / 1GiB",
@@ -255,6 +256,7 @@ Example snapshot:
 | `services[].uptime_seconds` | nonnegative integer or `null` | Current running-container uptime; `null` when not running |
 | `services[].restart_count` | nonnegative integer | Restart count for the current container |
 | `services[].domains` | string array | Hostnames from live Traefik labels |
+| `services[].links` | string array | Sorted, unique HTTP/HTTPS browser URLs inferred from running-container metadata; empty when no usable web address can be inferred |
 | `services[].routing_error` | string or `null` | Per-container routing parse error; the rest of the snapshot remains available |
 | `services[].ports` | array | Ports declared by Docker or Traefik metadata |
 | `ports[].internal` | string | Container port/protocol, such as `3000/tcp` |
@@ -266,6 +268,37 @@ Example snapshot:
 formatted strings, not byte counts. Stopped containers have unavailable resource samples. Limits
 are not reserved memory; container memory does not account for the whole VM. Domains and port
 metadata do not establish public reachability or prove that a process is listening.
+
+### Browser links
+
+The collector derives `links` once for the console, JSON output, and MCP. The console opens them
+in a new tab from deployment summaries and container details. It performs no DNS lookups or HTTP
+probes and does not create host-file entries, DNS records, or tunnels.
+
+For a local Docker engine, published TCP ports become links when they are HTTP/HTTPS ports
+80/443 or are identified by Traefik's `loadbalancer.server.port` and optional
+`loadbalancer.server.scheme` labels. Unspecified binding addresses become `localhost`; explicit
+addresses are retained, including bracketed IPv6. Other ports are left as port metadata. A proxy's
+generic listener is not presented as an application link.
+
+Routed URLs use explicit Host matchers. Router TLS settings determine HTTPS; without TLS settings,
+the declared URL uses HTTP. When a running Traefik proxy shares the app's Docker network, its
+static command-line entrypoint settings and published ports supply the browser port and any
+entrypoint TLS default. Localhost routes require such an observed proxy mapping. Public hostnames
+fall back to standard HTTP/HTTPS ports when a mapping cannot be inferred. URLs describe the site
+root; path matchers and middleware rewrites are not translated into application paths.
+
+Direct published-port links require a local Docker endpoint: a Unix socket, Windows named pipe,
+or loopback TCP/HTTP endpoint. Selection follows Docker's `DOCKER_CONTEXT` precedence over
+`DOCKER_HOST`; otherwise the collector reads the selected context's endpoint. If that optional
+context metadata cannot be read, direct links are omitted while status collection continues.
+Remote engines do not produce links for client loopback bindings or localhost hostnames. Stopped
+containers have no links. Invalid URL hostnames and non-HTTP backend schemes are omitted.
+
+These are derived addresses, not availability checks. Public domain links still require DNS and
+network access from the browser, and proxy filtering, certificates, and application readiness may
+affect whether a URL works. Proxy settings supplied only through configuration files cannot be
+inspected by this inference.
 
 ## Console HTTP
 

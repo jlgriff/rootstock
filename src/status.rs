@@ -8,6 +8,8 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::{inventory, routes};
 
+mod links;
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
 pub struct Snapshot {
@@ -36,6 +38,7 @@ pub struct ServiceStatus {
     pub uptime_seconds: Option<u64>,
     pub restart_count: u64,
     pub domains: Vec<String>,
+    pub links: Vec<String>,
     pub routing_error: Option<String>,
     pub ports: Vec<Port>,
     pub memory: Option<String>,
@@ -108,6 +111,7 @@ struct RestartPolicy {
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct ContainerConfig {
+    cmd: Option<Vec<String>>,
     labels: Option<BTreeMap<String, String>>,
     exposed_ports: Option<BTreeMap<String, serde_json::Value>>,
 }
@@ -131,6 +135,7 @@ struct Health {
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct NetworkSettings {
+    networks: Option<BTreeMap<String, serde_json::Value>>,
     ports: Option<BTreeMap<String, Option<Vec<Binding>>>>,
 }
 
@@ -228,7 +233,12 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
                 stats.insert(sample.id.clone(), sample);
             }
         }
-        for container in containers {
+        let local = links::local_engine();
+        let urls: Vec<_> = containers
+            .iter()
+            .map(|container| links::derive(container, &containers, local))
+            .collect();
+        for (container, links) in containers.into_iter().zip(urls) {
             let labels = container.config.labels.clone().unwrap_or_default();
             let Some(project) = labels
                 .get("com.docker.compose.project")
@@ -246,7 +256,7 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
                 services: Vec::new(),
             });
             let sample = stats.remove(&container.id);
-            app.services.push(service_status(container, sample)?);
+            app.services.push(service_status(container, sample, links)?);
         }
     }
     for app in apps.values_mut() {
@@ -260,7 +270,11 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
 }
 
 /// Builds safe display fields from one live container's metadata.
-fn service_status(container: Container, stats: Option<Stats>) -> Result<ServiceStatus> {
+fn service_status(
+    container: Container,
+    stats: Option<Stats>,
+    links: Vec<String>,
+) -> Result<ServiceStatus> {
     let labels = container.config.labels.unwrap_or_default();
     let service = labels
         .get("com.docker.compose.service")
@@ -334,6 +348,7 @@ fn service_status(container: Container, stats: Option<Stats>) -> Result<ServiceS
         uptime_seconds,
         restart_count: container.restart_count,
         domains,
+        links,
         routing_error,
         ports,
         memory: stats.as_ref().map(|sample| sample.memory.clone()),

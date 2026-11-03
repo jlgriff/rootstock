@@ -384,6 +384,11 @@ Domains come from live Traefik labels. Unsupported routing rules produce a per-s
 validation. Domains in a status snapshot describe declared routing; they do not prove DNS, TLS,
 public reachability, or the proxy's active configuration.
 
+The console makes derived web addresses clickable in deployment summaries and container details.
+The same URLs are exposed as `services[].links` in JSON and MCP; see the shared
+[browser-link contract](api.md#browser-links) for inference rules and limits. Local published web
+ports work without a domain; routed localhost addresses include the proxy's published host port.
+
 Internal ports combine Docker's exposed-port metadata, current port mappings, and Traefik's
 `loadbalancer.server.port` labels. Host ports are published Docker bindings, shown with the internal
 port they target. Multiple isolated apps can listen internally on `3000/tcp` while the proxy shares
@@ -412,7 +417,7 @@ No previous snapshot is presented as current after a failed collection.
 The page uses compiled Tailwind CSS and server-rendered HTML, with no JavaScript, external assets, database,
 or metrics history. Responses disable browser caching. Only selected status fields reach the page
 or JSON output; container environments, complete labels, mounts, and credentials are excluded.
-The collector issues read-only `ps`, `inspect`, and `stats` calls. It performs no app lifecycle
+The collector issues read-only `ps`, `inspect`, `stats`, and local `context inspect` calls. It performs no app lifecycle
 actions. No dashboard container, agent, Rust runtime, or extra port is installed on the serving VM;
 active queries briefly use its existing Docker/SSH infrastructure.
 

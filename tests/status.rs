@@ -36,10 +36,16 @@ impl Fixture {
            "NetworkSettings":{"Ports":null}}
         ]"#).unwrap();
         fs::write(
+            directory.path().join("ps"),
+            "web-id rootstock-web\nworker-id rootstock-web\nother-id unrelated\n",
+        )
+        .unwrap();
+        fs::write(
             directory.path().join("docker"),
             r#"#!/bin/sh
 case "$1" in
-  ps) printf 'web-id rootstock-web\nworker-id rootstock-web\nother-id unrelated\n' ;;
+  ps) cat "$FIXTURE_DIRECTORY/ps" ;;
+  context) printf '"%s"\n' "${FIXTURE_DOCKER_ENDPOINT:-unix:///example/docker.sock}" ;;
   inspect) cat "$FIXTURE_DIRECTORY/inspect.json" ;;
   stats) printf '%s\n' '{"ID":"web-id","MemUsage":"4MiB / 1GiB","CPUPerc":"0.25%"}' ;;
   *) echo "unexpected Docker command: $*" >&2; exit 1 ;;
@@ -65,10 +71,36 @@ esac
         .unwrap();
         command
             .env("PATH", path)
+            .env_remove("DOCKER_HOST")
+            .env_remove("DOCKER_CONTEXT")
             .env("FIXTURE_DIRECTORY", self.directory.path())
             .arg("--apps")
             .arg(self.directory.path().join("apps"));
         command
+    }
+
+    /// Keeps synthetic discovery aligned with the inspected container set.
+    fn containers(&self, containers: &Value) {
+        fs::write(
+            self.directory.path().join("inspect.json"),
+            serde_json::to_vec(containers).unwrap(),
+        )
+        .unwrap();
+        let listing = containers
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|container| {
+                format!(
+                    "{} {}\n",
+                    container["Id"].as_str().unwrap(),
+                    container["Config"]["Labels"]["com.docker.compose.project"]
+                        .as_str()
+                        .unwrap()
+                )
+            })
+            .collect::<String>();
+        fs::write(self.directory.path().join("ps"), listing).unwrap();
     }
 
     /// Requests a browser view from a disposable local dashboard process.
@@ -313,4 +345,166 @@ fn observe_serves_escaped_status_on_loopback() {
     }
     assert!(!response.contains("worker<script>"));
     assert!(!response.contains("must-never-appear"));
+}
+
+/// Links known local web bindings while leaving database ports and stopped services unlinked.
+#[test]
+fn local_web_bindings_become_browser_links() {
+    let fixture = Fixture::new();
+    let mut containers: Value =
+        serde_json::from_slice(&fs::read(fixture.directory.path().join("inspect.json")).unwrap())
+            .unwrap();
+    containers[0]["Config"]["Labels"]["traefik.enable"] = "false".into();
+    containers[0]["NetworkSettings"]["Ports"]["5432/tcp"] = serde_json::json!([
+        {"HostIp": "127.0.0.1", "HostPort": "5432"}
+    ]);
+    containers[1]["NetworkSettings"]["Ports"] = serde_json::json!({
+        "80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8081"}]
+    });
+    fixture.containers(&containers);
+    let output = fixture
+        .command()
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        snapshot["apps"][0]["services"][0]["links"],
+        serde_json::json!(["http://127.0.0.1:8080/"])
+    );
+    assert_eq!(
+        snapshot["apps"][0]["services"][1]["links"],
+        serde_json::json!([])
+    );
+    for path in ["/", "/?inspect=0"] {
+        let html = fixture.page(path);
+        assert!(
+            html.contains("href=\"http://127.0.0.1:8080/\""),
+            "missing local app link"
+        );
+        assert!(!html.contains("href=\"http://127.0.0.1:5432/\""));
+    }
+}
+
+/// Resolves routed localhost domains through the matching proxy's published HTTP and TLS ports.
+#[test]
+fn route_links_use_the_matching_proxy_host_ports() {
+    let fixture = Fixture::new();
+    let mut containers: Value =
+        serde_json::from_slice(&fs::read(fixture.directory.path().join("inspect.json")).unwrap())
+            .unwrap();
+    containers[0]["Config"]["Labels"] = serde_json::json!({
+        "com.docker.compose.project": "rootstock-web",
+        "com.docker.compose.service": "web",
+        "traefik.enable": "true",
+        "traefik.http.routers.web.rule": "Host(`preview.localhost`)",
+        "traefik.http.routers.web.entrypoints": "web",
+        "traefik.http.routers.secure.rule": "Host(`secure.localhost`)",
+        "traefik.http.routers.secure.entrypoints": "websecure",
+        "traefik.http.routers.secure.tls": "true"
+    });
+    containers[0]["NetworkSettings"] = serde_json::json!({"Ports": {}, "Networks": {"edge": {}}});
+    containers.as_array_mut().unwrap().push(serde_json::json!({
+        "Id": "proxy-id", "Name": "/example-proxy", "RestartCount": 0,
+        "Config": {"Labels": {"com.docker.compose.project": "rootstock-proxy", "com.docker.compose.service": "traefik"},
+            "Cmd": ["--providers.docker=true", "--providers.docker.network=edge", "--entrypoints.web.address=:80", "--entrypoints.websecure.address=:443"]},
+        "State": {"Status": "running", "Running": true, "StartedAt": "2026-01-01T00:00:00Z"},
+        "NetworkSettings": {"Networks": {"edge": {}}, "Ports": {
+            "80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "32772"}],
+            "443/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8443"}]
+        }}
+    }));
+    fixture.containers(&containers);
+    let output = fixture
+        .command()
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let service = &snapshot["apps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|app| app["name"] == "web")
+        .unwrap()["services"][0];
+    assert_eq!(
+        service["links"],
+        serde_json::json!([
+            "http://preview.localhost:32772/",
+            "https://secure.localhost:8443/"
+        ])
+    );
+    let html = fixture.page("/");
+    assert!(html.contains("href=\"http://preview.localhost:32772/\""));
+    assert!(html.contains("href=\"https://secure.localhost:8443/\""));
+}
+
+/// Keeps remote loopback bindings private and uses explicit TLS metadata for public links.
+#[test]
+fn remote_hosts_never_generate_client_loopback_links() {
+    let fixture = Fixture::new();
+    let path = fixture.directory.path().join("inspect.json");
+    let mut containers: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    containers[0]["Config"]["Labels"]["traefik.http.routers.web.tls.certresolver"] =
+        "rootstock".into();
+    containers[0]["Config"]["Labels"]["traefik.http.routers.local.rule"] =
+        "Host(`preview.LOCALHOST`) || Host(`127.0.0.1`)".into();
+    fixture.containers(&containers);
+    for context in [false, true] {
+        let mut command = fixture.command();
+        if context {
+            command
+                .env("DOCKER_HOST", "unix:///example/docker.sock")
+                .env("DOCKER_CONTEXT", "remote")
+                .env("FIXTURE_DOCKER_ENDPOINT", "ssh://deploy@host.example.test");
+        } else {
+            command.env("DOCKER_HOST", "ssh://deploy@host.example.test");
+        }
+        let output = command.args(["status", "--json"]).output().unwrap();
+        assert!(output.status.success());
+        let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            snapshot["apps"][0]["services"][0]["links"],
+            serde_json::json!(["https://app.example.com/"])
+        );
+    }
+}
+
+/// Rejects unsafe hostname metadata and formats IPv6 web bindings as valid browser URLs.
+#[test]
+fn link_metadata_cannot_inject_url_authority_or_markup() {
+    let fixture = Fixture::new();
+    let path = fixture.directory.path().join("inspect.json");
+    let mut containers: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    containers[0]["Config"]["Labels"]["traefik.http.routers.web.rule"] =
+        "Host(`safe.example.com@evil.example.test`)".into();
+    containers[0]["NetworkSettings"]["Ports"] = serde_json::json!({
+        "3000/tcp": [{"HostIp": "::1", "HostPort": "8080"}],
+        "5432/tcp": [{"HostIp": "127.0.0.1", "HostPort": "5432"}]
+    });
+    fixture.containers(&containers);
+    let output = fixture
+        .command()
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        snapshot["apps"][0]["services"][0]["links"],
+        serde_json::json!(["http://[::1]:8080/"])
+    );
+    let html = fixture.page("/");
+    assert!(html.contains("href=\"http://[::1]:8080/\""));
+    assert!(!html.contains("href=\"http://safe.example.com@evil.example.test/\""));
 }
