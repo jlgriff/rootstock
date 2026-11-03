@@ -1,0 +1,64 @@
+x-litestream: &litestream
+  image: ${SQLITE_BACKUP_IMAGE:?set SQLITE_BACKUP_IMAGE}
+  pull_policy: always
+  environment:
+    SQLITE_DATABASE: ${SQLITE_DATABASE:-app.db}
+    SQLITE_UID: ${SQLITE_UID:-1000}
+    SQLITE_GID: ${SQLITE_GID:-1000}
+    LITESTREAM_BUCKET: ${LITESTREAM_BUCKET:?set LITESTREAM_BUCKET}
+    LITESTREAM_PREFIX: ${LITESTREAM_PREFIX:?set a unique LITESTREAM_PREFIX}
+    LITESTREAM_REGION: ${LITESTREAM_REGION:-us-east-1}
+    LITESTREAM_ENDPOINT: ${LITESTREAM_ENDPOINT:-}
+    LITESTREAM_RETENTION: ${LITESTREAM_RETENTION:-168h}
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+  volumes: ["data:/data"]
+
+services:
+  prepare:
+    <<: *litestream
+    user: "0:0"
+    entrypoint: ["/usr/local/bin/rootstock-database"]
+    command: ["prepare"]
+    restart: "no"
+
+  backup:
+    <<: *litestream
+    user: "${SQLITE_UID:-1000}:${SQLITE_GID:-1000}"
+    command: ["replicate", "-config", "/etc/litestream.yml"]
+    restart: unless-stopped
+    stop_grace_period: 45s
+    depends_on:
+      prepare:
+        condition: service_completed_successfully
+
+  web:
+    image: ${APP_IMAGE:?set APP_IMAGE}
+    pull_policy: always
+    user: "${SQLITE_UID:-1000}:${SQLITE_GID:-1000}"
+    restart: unless-stopped
+    environment:
+      DATABASE_PATH: /data/${SQLITE_DATABASE:-app.db}
+    volumes: ["data:/data"]
+    networks: [rootstock-proxy]
+    depends_on:
+      prepare:
+        condition: service_completed_successfully
+      backup:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-web.rule=Host(`${APP_DOMAIN:?set APP_DOMAIN}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-web.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-web.tls.certresolver=rootstock"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-web.service=${COMPOSE_PROJECT_NAME}-web"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME}-web.loadbalancer.server.port=${APP_PORT:-3000}"
+
+networks:
+  rootstock-proxy:
+    external: true
+
+volumes:
+  data:
+    name: ${SQLITE_DATA_VOLUME:-${COMPOSE_PROJECT_NAME}-data}

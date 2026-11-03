@@ -1,0 +1,13 @@
+snapshot:
+  retention: ${LITESTREAM_RETENTION}
+socket:
+  enabled: true
+  path: /tmp/litestream.sock
+dbs:
+  - path: /data/${SQLITE_DATABASE}
+    replica:
+      type: s3
+      bucket: ${LITESTREAM_BUCKET}
+      path: ${LITESTREAM_PREFIX}
+      region: ${LITESTREAM_REGION}
+      endpoint: ${LITESTREAM_ENDPOINT}

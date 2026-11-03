@@ -1,0 +1,17 @@
+services:
+  site:
+    image: nginx:alpine
+    volumes: ["./www:/usr/share/nginx/html:ro"]
+    networks: [rootstock-proxy]
+    labels:
+      rootstock.acceptance: "${ROOTSTOCK_ACCEPTANCE_RUN}"
+      traefik.enable: "true"
+      traefik.http.routers.acceptance-site.rule: "Host(`web.test`)"
+      traefik.http.routers.acceptance-site.entrypoints: "web"
+      traefik.http.routers.acceptance-site.service: "acceptance-site"
+      traefik.http.services.acceptance-site.loadbalancer.server.port: "80"
+
+networks:
+  rootstock-proxy:
+    external: true
+    name: ${ROOTSTOCK_PROXY_NETWORK}

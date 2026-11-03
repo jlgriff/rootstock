@@ -1,0 +1,18 @@
+[package]
+name = "rootstock"
+version = "0.1.0"
+edition = "2024"
+description = "Deploy independent web applications on one small server with validated routing"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.6", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tempfile = "3.27.0"
+toml = "1.1.5"
+
+[dev-dependencies]
+tempfile = "3.27.0"

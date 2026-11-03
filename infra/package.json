@@ -1,0 +1,21 @@
+{
+  "name": "rootstock-infra",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test tests/infrastructure.test.cjs"
+  },
+  "dependencies": {
+    "@pulumi/aws": "^7.52.1",
+    "@pulumi/command": "^1.0.0",
+    "@pulumi/digitalocean": "^4.0.0",
+    "@pulumi/pulumi": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

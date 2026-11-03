@@ -1,0 +1,13 @@
+# Serves plain HTTP on one port so the acceptance harness needs no real domains
+# or certificates. TLS, ACME and the HTTP-to-HTTPS redirect are not exercised.
+services:
+  traefik:
+    command: !override
+      - "--providers.docker=true"
+      - "--providers.docker.exposedByDefault=false"
+      - "--providers.docker.endpoint=tcp://socket-proxy:2375"
+      - "--providers.docker.network=${ROOTSTOCK_PROXY_NETWORK}"
+      - "--providers.docker.constraints=Label(`rootstock.acceptance`, `${ROOTSTOCK_ACCEPTANCE_RUN}`)"
+      - "--entrypoints.web.address=:80"
+    ports: !override
+      - "127.0.0.1::80"

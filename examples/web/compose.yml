@@ -1,0 +1,17 @@
+services:
+  web:
+    image: ${APP_IMAGE:?set APP_IMAGE to a versioned image}
+    pull_policy: always
+    restart: unless-stopped
+    networks: [rootstock-proxy]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-web.rule=Host(`${APP_DOMAIN:?set APP_DOMAIN}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-web.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-web.tls.certresolver=rootstock"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-web.service=${COMPOSE_PROJECT_NAME}-web"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME}-web.loadbalancer.server.port=${APP_PORT:-3000}"
+
+networks:
+  rootstock-proxy:
+    external: true

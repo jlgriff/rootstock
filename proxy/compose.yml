@@ -1,0 +1,48 @@
+# The shared proxy. Every hosted domain's DNS points at this VM, and Traefik
+# picks the application from the container labels it discovers.
+services:
+  traefik:
+    image: traefik:v3.7.13
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      # Nothing is routed unless a container asks to be, so an unrelated
+      # container cannot acquire a public route by accident.
+      - "--providers.docker.exposedByDefault=false"
+      - "--providers.docker.endpoint=tcp://socket-proxy:2375"
+      - "--providers.docker.network=${ROOTSTOCK_PROXY_NETWORK:-rootstock-proxy}"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.rootstock.acme.email=${ACME_EMAIL:?set ACME_EMAIL}"
+      - "--certificatesresolvers.rootstock.acme.storage=/acme/acme.json"
+      - "--certificatesresolvers.rootstock.acme.httpchallenge=true"
+      - "--certificatesresolvers.rootstock.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "acme:/acme"
+    depends_on: [socket-proxy]
+    networks: [rootstock-proxy, socket]
+
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      EVENTS: 1
+      VERSION: 1
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    networks: [socket]
+
+networks:
+  rootstock-proxy:
+    external: true
+    name: ${ROOTSTOCK_PROXY_NETWORK:-rootstock-proxy}
+  socket:
+
+volumes:
+  acme:

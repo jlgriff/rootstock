@@ -1,0 +1,10 @@
+/target
+/infra/bin
+/infra/node_modules
+/apps/
+/infra/Pulumi.*.yaml
+!/infra/Pulumi.example.yaml
+!/infra/Pulumi.*.example.yaml
+.env
+.env.*
+!.env.example

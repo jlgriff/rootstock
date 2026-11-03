@@ -1,0 +1,6 @@
+name: rootstock
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+description: Shared container hosting with automatic HTTPS
