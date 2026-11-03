@@ -215,7 +215,7 @@ volumes until the chosen deployment is verified.
 
 ### Optional cloud infrastructure
 
-Needs Node.js (CI uses 26 LTS), npm, Pulumi, a state backend, provider credentials, and an uploaded SSH public key.
+Needs Node.js, npm, Pulumi, a state backend, provider credentials, and an uploaded SSH public key.
 Select AWS with `rootstock:cloud=aws` or DigitalOcean with `rootstock:cloud=digitalocean` (the default
 for existing stacks). Only the chosen provider's host settings are required.
 
