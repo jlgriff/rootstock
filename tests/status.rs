@@ -70,6 +70,43 @@ esac
             .arg(self.directory.path().join("apps"));
         command
     }
+
+    /// Requests a browser view from a disposable local dashboard process.
+    fn page(&self, path: &str) -> String {
+        let child = self
+            .command()
+            .args(["observe", "--port", "0", "--refresh", "30"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+        let mut server = Server(child);
+        let mut line = String::new();
+        BufReader::new(server.0.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        assert!(
+            line.starts_with("http://127.0.0.1:"),
+            "missing loopback URL: {line}"
+        );
+        let address = line
+            .trim()
+            .strip_prefix("http://")
+            .unwrap()
+            .trim_end_matches('/');
+        let mut stream = TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        response
+    }
 }
 
 struct Server(Child);
@@ -193,42 +230,74 @@ fn invalid_live_routes_do_not_hide_container_status() {
     );
 }
 
+/// Preserves failed-job evidence so a running web process cannot mask a failed supporting service.
+#[test]
+fn failed_container_exit_code_reaches_status_and_dashboard() {
+    let fixture = Fixture::new();
+    let path = fixture.directory.path().join("inspect.json");
+    let mut containers: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    containers[1]["State"]["ExitCode"] = 1.into();
+    fs::write(path, serde_json::to_vec(&containers).unwrap()).unwrap();
+    let output = fixture
+        .command()
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(snapshot["apps"][0]["services"][1]["exit_code"], 1);
+    let response = fixture.page("/");
+    assert!(
+        response.contains("Needs attention"),
+        "failed service did not affect deployment health"
+    );
+    assert!(
+        response.contains("Failed"),
+        "failed service was not identified"
+    );
+}
+
+/// Keeps successful one-off setup jobs from creating false deployment alarms.
+#[test]
+fn successful_jobs_are_completed_without_flagging_a_running_deployment() {
+    let fixture = Fixture::new();
+    let path = fixture.directory.path().join("inspect.json");
+    let mut containers: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    containers[1]["State"]["ExitCode"] = 0.into();
+    fs::write(path, serde_json::to_vec(&containers).unwrap()).unwrap();
+    let response = fixture.page("/");
+    assert!(
+        response.contains("Completed"),
+        "successful job was not distinguished from a stopped service"
+    );
+    assert!(
+        !response.contains("Needs attention"),
+        "successful setup job raised an alarm"
+    );
+}
+
+/// Prevents a deliberately persistent service from being mislabeled as a successful setup job.
+#[test]
+fn stopped_persistent_services_are_not_completed_jobs() {
+    let fixture = Fixture::new();
+    let path = fixture.directory.path().join("inspect.json");
+    let mut containers: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    containers[1]["State"]["ExitCode"] = 0.into();
+    containers[1]["HostConfig"] = serde_json::json!({"RestartPolicy": {"Name": "unless-stopped"}});
+    fs::write(path, serde_json::to_vec(&containers).unwrap()).unwrap();
+    let response = fixture.page("/");
+    assert!(
+        response.contains("Partially running"),
+        "stopped persistent service was counted as a completed job"
+    );
+    assert!(!response.contains("Completed"));
+}
+
 /// Protects the local browser view from executing metadata or publishing credentials.
 #[test]
 fn observe_serves_escaped_status_on_loopback() {
     let fixture = Fixture::new();
-    let child = fixture
-        .command()
-        .args(["observe", "--port", "0", "--refresh", "30"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap();
-    let mut server = Server(child);
-    let mut line = String::new();
-    BufReader::new(server.0.stdout.take().unwrap())
-        .read_line(&mut line)
-        .unwrap();
-    assert!(
-        line.starts_with("http://127.0.0.1:"),
-        "missing loopback URL: {line}"
-    );
-    let address = line
-        .trim()
-        .strip_prefix("http://")
-        .unwrap()
-        .trim_end_matches('/');
-    let mut stream = TcpStream::connect(address).unwrap();
-    stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-        .unwrap();
-    write!(
-        stream,
-        "GET / HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
-    )
-    .unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
+    let response = fixture.page("/");
     for expected in [
         "200 OK",
         "no-store",
