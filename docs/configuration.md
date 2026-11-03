@@ -215,7 +215,7 @@ volumes until the chosen deployment is verified.
 
 ### Optional cloud infrastructure
 
-Needs Node.js, npm, Pulumi, a state backend, provider credentials, and an uploaded SSH public key.
+Needs Node.js (CI uses 26 LTS), npm, Pulumi, a state backend, provider credentials, and an uploaded SSH public key.
 Select AWS with `rootstock:cloud=aws` or DigitalOcean with `rootstock:cloud=digitalocean` (the default
 for existing stacks). Only the chosen provider's host settings are required.
 
@@ -443,23 +443,9 @@ update the pinned version and checksums in `tools/styles.sh`, then regenerate an
 
 ### JSON snapshot
 
-| Field | Meaning |
-| --- | --- |
-| `captured_at` | UTC RFC 3339 timestamp after collection; container data and metrics are sampled across separate calls |
-| `apps` | Applications sorted by Compose project; an empty array means none were found |
-| `apps[].name`, `project` | App name and full Compose project identifier |
-| `apps[].configured` | Whether that project has a folder in the local `--apps` inventory |
-| `apps[].services` | Containers sorted by service and container name; empty for a registered app with no containers |
-| `services[].service`, `container` | Compose service and Docker container name |
-| `services[].state`, `health` | Docker state and nullable healthcheck status |
-| `services[].exit_code` | Docker exit code for a nonrunning container; `null` when running or unreported |
-| `services[].restart_policy` | Docker restart policy, used to distinguish persistent services from completed jobs; `null` when unreported |
-| `services[].uptime_seconds` | Nonnegative elapsed seconds for a running container; otherwise `null` |
-| `services[].restart_count` | Docker restart count for this container |
-| `services[].domains`, `routing_error` | Declared hostnames and a nullable route-parsing error |
-| `services[].ports[].internal` | Container port and protocol, such as `3000/tcp` |
-| `services[].ports[].published` | Host bindings for that port, such as `127.0.0.1:8080` or `[::]:8080`; empty for unpublished ports |
-| `services[].memory`, `cpu` | Docker-formatted current memory/limit and CPU percentage strings; `null` when unavailable |
+`status --json` and MCP's `get_status` return the same
+[status snapshot](api.md#status-snapshot). That shared reference defines every field, type, null
+value, and sampling limitation; the HTML console renders the same collected data.
 
 ## Resource measurements
 

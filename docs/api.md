@@ -12,6 +12,11 @@ Use [MCP setup](mcp.md) for client configuration and [console configuration](con
 for port and refresh settings. The [OpenAPI document](http.openapi.yaml) describes the HTTP route.
 MCP's machine-readable tool contracts are returned by `tools/list`; they are generated from Rust types.
 
+The CLI, HTTP console, and MCP adapter share the core library's inventory, routing validation, and
+status collector wherever those operations apply. The CLI and MCP also share deployment planning.
+The [status snapshot](#status-snapshot) below is the common data contract; each transport documents
+only its own arguments, presentation, and errors. HTTP renders HTML rather than exposing a JSON API.
+
 ## MCP transport and results
 
 The server uses the official SDK's stdio transport and protocol negotiation. No HTTP URL, API key,
@@ -117,60 +122,7 @@ an empty `services` array. Live `rootstock-` projects absent from local registra
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_status","arguments":{"name":"web"}}}
 ```
 
-Response:
-
-```json
-{
-  "captured_at": "2026-01-01T12:00:00Z",
-  "apps": [{
-    "name": "web",
-    "project": "rootstock-web",
-    "configured": true,
-    "services": [{
-      "service": "web",
-      "container": "rootstock-web-web-1",
-      "state": "running",
-      "exit_code": null,
-      "restart_policy": "unless-stopped",
-      "health": "healthy",
-      "uptime_seconds": 120,
-      "restart_count": 0,
-      "domains": ["app.example.com"],
-      "routing_error": null,
-      "ports": [{"internal": "3000/tcp", "published": []}],
-      "memory": "4MiB / 1GiB",
-      "cpu": "0.25%"
-    }]
-  }]
-}
-```
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `captured_at` | string | UTC RFC 3339 timestamp after collection; individual Docker reads are not atomic |
-| `apps` | array | Deployments ordered by project; empty when none are found without a name filter |
-| `apps[].name`, `project` | string | App name and full Compose project identifier |
-| `apps[].configured` | boolean | Whether the project has a local inventory folder |
-| `apps[].services` | array | Containers ordered by service and container name |
-| `services[].service`, `container` | string | Compose service and Docker container name |
-| `services[].state` | string | Raw Docker state, such as `running`, `exited`, or `restarting` |
-| `services[].exit_code` | integer or `null` | Reported exit code for a nonrunning container |
-| `services[].restart_policy` | string or `null` | Docker policy, such as `no`, `always`, or `unless-stopped` |
-| `services[].health` | string or `null` | Docker health status; `null` when no check is recorded |
-| `services[].uptime_seconds` | nonnegative integer or `null` | Current running-container uptime; `null` when not running |
-| `services[].restart_count` | nonnegative integer | Restart count for the current container |
-| `services[].domains` | string array | Hostnames from live Traefik labels |
-| `services[].routing_error` | string or `null` | Per-container routing parse error; the rest of the snapshot remains available |
-| `services[].ports` | array | Ports declared by Docker or Traefik metadata |
-| `ports[].internal` | string | Container port/protocol, such as `3000/tcp` |
-| `ports[].published` | string array | Host bindings, such as `127.0.0.1:8080` or `[::]:8080`; empty for unpublished ports |
-| `services[].memory` | string or `null` | Docker-formatted memory usage and limit; `null` when unavailable |
-| `services[].cpu` | string or `null` | Docker-formatted CPU percentage; `null` when unavailable |
-
-`services[]` is nested under each `apps[]`; `ports[]` is nested under each service. Metrics are
-formatted strings, not byte counts. Stopped containers have unavailable resource samples. Limits
-are not reserved memory; container memory does not account for the whole VM. Domains and port
-metadata do not establish public reachability or prove that a process is listening.
+Returns the [shared status snapshot](#status-snapshot) as `structuredContent`.
 
 Unknown names return an application error. The name filter is applied after collecting the host
 snapshot, so it does not reduce the underlying Docker query scope. Invalid live routing produces
@@ -251,6 +203,67 @@ Missing apps, inventory/Compose errors, invalid routing, or conflicts anywhere i
 return application errors. This is configuration preflight, not a live deployment diff or a
 guarantee of image availability, backups, database readiness, or successful startup. Actual CLI
 deployment can recreate containers and remove orphans; this tool only describes that invocation.
+
+## Status snapshot
+
+`rootstock status --json` returns this object directly. MCP's `get_status` returns the same object
+inside its tool result, optionally filtered by app name. The HTTP console renders the same
+collector output as HTML, with presentation-specific grouping and totals.
+
+Example snapshot:
+
+```json
+{
+  "captured_at": "2026-01-01T12:00:00Z",
+  "apps": [{
+    "name": "web",
+    "project": "rootstock-web",
+    "configured": true,
+    "services": [{
+      "service": "web",
+      "container": "rootstock-web-web-1",
+      "state": "running",
+      "exit_code": null,
+      "restart_policy": "unless-stopped",
+      "health": "healthy",
+      "uptime_seconds": 120,
+      "restart_count": 0,
+      "domains": ["app.example.com"],
+      "routing_error": null,
+      "ports": [{"internal": "3000/tcp", "published": []}],
+      "memory": "4MiB / 1GiB",
+      "cpu": "0.25%"
+    }]
+  }]
+}
+```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `captured_at` | string | UTC RFC 3339 timestamp after collection; individual Docker reads are not atomic |
+| `apps` | array | Deployments ordered by project; empty when none are found |
+| `apps[].name`, `project` | string | App name and full Compose project identifier |
+| `apps[].configured` | boolean | Whether the project has a local inventory folder |
+| `apps[].services` | array | Containers ordered by service and container name |
+| `services[].service`, `container` | string | Compose service and Docker container name |
+| `services[].state` | string | Raw Docker state, such as `running`, `exited`, or `restarting` |
+| `services[].exit_code` | integer or `null` | Reported exit code for a nonrunning container |
+| `services[].restart_policy` | string or `null` | Docker policy, such as `no`, `always`, or `unless-stopped` |
+| `services[].health` | string or `null` | Docker health status; `null` when no check is recorded |
+| `services[].uptime_seconds` | nonnegative integer or `null` | Current running-container uptime; `null` when not running |
+| `services[].restart_count` | nonnegative integer | Restart count for the current container |
+| `services[].domains` | string array | Hostnames from live Traefik labels |
+| `services[].routing_error` | string or `null` | Per-container routing parse error; the rest of the snapshot remains available |
+| `services[].ports` | array | Ports declared by Docker or Traefik metadata |
+| `ports[].internal` | string | Container port/protocol, such as `3000/tcp` |
+| `ports[].published` | string array | Host bindings, such as `127.0.0.1:8080` or `[::]:8080`; empty for unpublished ports |
+| `services[].memory` | string or `null` | Docker-formatted memory usage and limit; `null` when unavailable |
+| `services[].cpu` | string or `null` | Docker-formatted CPU percentage; `null` when unavailable |
+
+`services[]` is nested under each `apps[]`; `ports[]` is nested under each service. Metrics are
+formatted strings, not byte counts. Stopped containers have unavailable resource samples. Limits
+are not reserved memory; container memory does not account for the whole VM. Domains and port
+metadata do not establish public reachability or prove that a process is listening.
 
 ## Console HTTP
 
