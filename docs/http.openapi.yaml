@@ -1,0 +1,71 @@
+openapi: 3.1.0
+info:
+  title: Rootstock local console
+  version: 0.1.0
+  description: Read-only loopback HTML interface. MCP uses a separate stdio process.
+servers:
+  - url: http://127.0.0.1:8787
+    description: Default local port; select another with observe --port.
+paths:
+  /:
+    get:
+      operationId: getConsoleOverview
+      summary: View live deployments and optional container details
+      description: >-
+        Host must be 127.0.0.1:<port> or localhost:<port>. Only the inspect query parameter
+        is supported, once, as an unsigned decimal index. Other query syntax returns 404.
+        An out-of-range numeric index renders the overview with all details closed.
+        Other HTTP methods return 405; unknown paths return 404.
+      parameters:
+        - name: inspect
+          in: query
+          required: false
+          description: Zero-based deployment index in the current project-sorted snapshot.
+          schema:
+            type: integer
+            minimum: 0
+          example: 0
+      responses:
+        '200':
+          description: Fresh HTML overview, including an empty host or inventory.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: Unexpected Host header; checked before the method or path.
+          content:
+            text/html:
+              schema:
+                type: string
+              example: Unexpected Host header
+        '404':
+          description: Unsupported path or query syntax.
+          content:
+            text/html:
+              schema:
+                type: string
+              example: Not found
+        '405':
+          description: Only GET is supported, including rejection of HEAD.
+          content:
+            text/html:
+              schema:
+                type: string
+              example: Only GET is supported
+        '503':
+          description: HTML error view with expandable Docker/SSH or inventory diagnostics.
+          content:
+            text/html:
+              schema:
+                type: string
+components:
+  headers:
+    NoStore:
+      description: Responses are not cached; applies to error responses as well.
+      schema:
+        type: string
+        const: no-store

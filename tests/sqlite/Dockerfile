@@ -3,6 +3,8 @@ RUN apk add --no-cache build-base
 WORKDIR /source
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY mcp/Cargo.toml mcp/Cargo.toml
+COPY mcp/src mcp/src
 COPY tests/sqlite/Cargo.toml tests/sqlite/Cargo.toml
 COPY tests/sqlite/src tests/sqlite/src
 RUN cargo build --locked --release -p sqlite-fixture

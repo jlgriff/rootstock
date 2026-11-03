@@ -9,12 +9,14 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use crate::{inventory, routes};
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
 pub struct Snapshot {
     pub captured_at: String,
     pub apps: Vec<AppStatus>,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
 pub struct AppStatus {
     pub name: String,
     pub project: String,
@@ -23,6 +25,7 @@ pub struct AppStatus {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
 pub struct ServiceStatus {
     pub service: String,
     pub container: String,
@@ -40,6 +43,7 @@ pub struct ServiceStatus {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
 pub struct Port {
     pub internal: String,
     pub published: Vec<String>,
