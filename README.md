@@ -84,3 +84,5 @@ cd infra && npm ci && npm run typecheck && npm test
 The CLI and SQLite test fixture use Rust. Optional Pulumi infrastructure and its mock tests use
 TypeScript with Pulumi's supported SDK; Node.js runs only on your workstation or in CI.
 Small shell scripts handle container and host setup. None adds a management process to the server.
+The browser console uses Tailwind utilities with compiled CSS embedded in the Rust binary;
+see [styling the console](docs/configuration.md#styling-the-console) before changing its classes.

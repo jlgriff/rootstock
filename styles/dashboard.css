@@ -1,0 +1,9 @@
+@import "tailwindcss" source(none);
+@source "../src/dashboard.rs";
+
+@theme {
+  --color-canvas: #f7f9fb;
+  --color-ink: #18232f;
+  --color-muted: #657180;
+  --color-brand: #176c53;
+}

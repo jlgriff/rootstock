@@ -361,8 +361,15 @@ No cloud-specific credentials or dashboard account are required.
 
 Status includes containers whose `com.docker.compose.project` label starts with `rootstock-`,
 including the shared proxy and projects absent from the local inventory. It groups containers by
-that project and uses `com.docker.compose.service` for the service name. Stopped and one-off
-containers remain visible until removed. Unrelated Compose projects and unlabelled containers are
+that project and uses `com.docker.compose.service` for the service name. The browser calls these
+groups deployments, including shared infrastructure. Its overview shows deployment health,
+declared domains, and combined memory/CPU for running containers. Details opens the full service
+inventory, with individual ports, resource samples, restart counts, and uptime. Inspection is
+tracked in the page URL and stays open across automatic refreshes. Missing resource samples make
+the corresponding aggregate unavailable rather than presenting an incomplete sum as a total.
+Docker CPU percentages are added directly and can exceed 100% on a host with multiple CPUs.
+Stopped and one-off containers remain
+visible until removed. Unrelated Compose projects and unlabelled containers are
 outside this view. Local app folders without containers appear as `not deployed`; if the inventory
 directory is absent, live discovery still works. Status reads folder registration and optional
 `rootstock.toml` settings, but does not resolve Compose files or require their environment secrets.
@@ -380,7 +387,10 @@ host ports `80` and `443` across their domains. An app without published binding
 reachable through Traefik. The view does not scan sockets or enumerate host-network listeners;
 metadata alone does not prove a process is listening on a port.
 
-Health is Docker's last recorded healthcheck status. An absent check is shown explicitly. Uptime
+Health is Docker's last recorded healthcheck status. An absent check is shown explicitly. Exited
+non-restarting containers with code zero appear as completed jobs; stopped persistent services
+remain stopped, and nonzero exits flag their deployment for review.
+Running processes, successful jobs, and unavailable healthchecks are distinct states. Uptime
 is elapsed time since the current running container's start, not its creation. Restart counts are
 Docker's container restart counts and reset when a container is recreated. Resource usage comes
 from `docker stats --no-stream`: memory follows Docker's Linux cache adjustment, and the displayed
@@ -395,12 +405,37 @@ the page refreshes after the configured interval. Collection is serial, so slow 
 delay the page. Docker failures produce HTTP 503 with an error; a CLI status failure exits nonzero.
 No previous snapshot is presented as current after a failed collection.
 
-The page uses embedded CSS and server-rendered HTML, with no JavaScript, external assets, database,
+The page uses compiled Tailwind CSS and server-rendered HTML, with no JavaScript, external assets, database,
 or metrics history. Responses disable browser caching. Only selected status fields reach the page
 or JSON output; container environments, complete labels, mounts, and credentials are excluded.
 The collector issues read-only `ps`, `inspect`, and `stats` calls. It performs no app lifecycle
 actions. No dashboard container, agent, Rust runtime, or extra port is installed on the serving VM;
 active queries briefly use its existing Docker/SSH infrastructure.
+
+### Styling the console
+
+Style the Rust-rendered HTML in `src/dashboard.rs` with Tailwind utility classes. Theme colors and
+the explicit source scan live in `styles/dashboard.css`. Keep complete utility names in source;
+when a state changes colors, select whole class strings so Tailwind can find every variant.
+
+```sh
+./tools/styles.sh
+./tools/styles.sh --check
+./tools/styles.sh --watch
+```
+
+The default command compiles and minifies `src/dashboard.css`. Commit that generated file with
+class or theme changes; CI runs `--check` and rejects stale output. `--watch` rebuilds on source
+changes. Because CSS is embedded at Rust compile time, rebuild and restart `observe` after a
+stylesheet update; the watcher does not provide browser hot reload. Ordinary Cargo builds use the
+checked-in CSS and do not run Tailwind or download build tools.
+
+The script downloads Tailwind's standalone CLI 4.3.4 into ignored `target/tools/`, verifies the
+platform-specific SHA-256 checksum, and reuses it. Asset generation supports macOS and glibc Linux
+on ARM64 and x86-64; it needs a POSIX shell, curl, and `sha256sum` or `shasum`. Internet access is
+needed only for the initial download. Tailwind and Node are not needed in the browser or on the
+serving VM, and no npm installation is required for this styling workflow. When upgrading Tailwind,
+update the pinned version and checksums in `tools/styles.sh`, then regenerate and review the CSS.
 
 ### JSON snapshot
 
@@ -413,6 +448,8 @@ active queries briefly use its existing Docker/SSH infrastructure.
 | `apps[].services` | Containers sorted by service and container name; empty for a registered app with no containers |
 | `services[].service`, `container` | Compose service and Docker container name |
 | `services[].state`, `health` | Docker state and nullable healthcheck status |
+| `services[].exit_code` | Docker exit code for a nonrunning container; `null` when running or unreported |
+| `services[].restart_policy` | Docker restart policy, used to distinguish persistent services from completed jobs; `null` when unreported |
 | `services[].uptime_seconds` | Nonnegative elapsed seconds for a running container; otherwise `null` |
 | `services[].restart_count` | Docker restart count for this container |
 | `services[].domains`, `routing_error` | Declared hostnames and a nullable route-parsing error |

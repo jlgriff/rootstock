@@ -27,6 +27,8 @@ pub struct ServiceStatus {
     pub service: String,
     pub container: String,
     pub state: String,
+    pub exit_code: Option<i64>,
+    pub restart_policy: Option<String>,
     pub health: Option<String>,
     pub uptime_seconds: Option<u64>,
     pub restart_count: u64,
@@ -84,6 +86,19 @@ struct Container {
     state: ContainerState,
     restart_count: u64,
     network_settings: NetworkSettings,
+    host_config: Option<HostConfig>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct HostConfig {
+    restart_policy: RestartPolicy,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct RestartPolicy {
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +112,7 @@ struct ContainerConfig {
 #[serde(rename_all = "PascalCase")]
 struct ContainerState {
     status: String,
+    exit_code: Option<i64>,
     running: bool,
     started_at: String,
     health: Option<Health>,
@@ -302,6 +318,14 @@ fn service_status(container: Container, stats: Option<Stats>) -> Result<ServiceS
         service,
         container: container.name.trim_start_matches('/').to_string(),
         state: container.state.status,
+        exit_code: if container.state.running {
+            None
+        } else {
+            container.state.exit_code
+        },
+        restart_policy: container
+            .host_config
+            .map(|config| config.restart_policy.name),
         health: container.state.health.map(|health| health.status),
         uptime_seconds,
         restart_count: container.restart_count,
