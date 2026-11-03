@@ -86,8 +86,8 @@ so the single-thread async runtime can continue handling the protocol.
 
 MCP dependencies belong to the separate workspace package. The core library's optional `api-schema`
 feature derives response schemas and is enabled by the adapter; ordinary CLI builds leave it off.
-Default `cargo build` still builds only the CLI. CI's Linux release artifact contains separate
-`rootstock` and `rootstock-mcp` executables, so users can install either or both.
+Default `cargo build` still builds only the CLI. See [Build and connect](#build-and-connect) to
+build or install the optional MCP executable separately.
 
 The adapter uses the official [Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk)
 with server, macro, and stdio features. HTTP and OAuth transports are not enabled.

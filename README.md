@@ -88,7 +88,7 @@ independent of the core workspace.
 cargo test --workspace
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cd infra && npm ci && npm run typecheck && npm test
+cd infra && npm ci && npm test
 ```
 
 The CLI, SQLite test fixture, and MCP adapter use Rust. Optional Pulumi infrastructure and its mock tests use

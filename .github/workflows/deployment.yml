@@ -1,0 +1,20 @@
+name: Deployment
+
+on:
+  push:
+    branches: [main]
+    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', '.github/workflows/deployment.yml']
+  pull_request:
+    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', '.github/workflows/deployment.yml']
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Exclude optional examples
+        run: rm -rf "${GITHUB_WORKSPACE:?}/examples"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+      - run: ./tests/acceptance/run.sh
+      - run: ./tests/sqlite/run.sh
