@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test tests/infrastructure.test.cjs"
+    "test": "npm run build && node --test bin/tests/infrastructure.test.js"
   },
   "dependencies": {
     "@pulumi/aws": "^7.52.1",

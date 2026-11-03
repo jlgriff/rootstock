@@ -1,9 +1,17 @@
-const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
-const test = require("node:test");
+import * as assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { test } from "node:test";
+import type { MockResourceArgs } from "@pulumi/pulumi/runtime";
+
+interface StackResult {
+  cloud: string;
+  ip: string;
+  dockerHost: string;
+  resources: Pick<MockResourceArgs, "type" | "inputs">[];
+}
 
 /** Isolates stack configuration and Pulumi runtime state for each cloud. */
-function runStack(cloud) {
+function runStack(cloud: string) {
   const config = {
     "rootstock:cloud": cloud,
     "rootstock:hostName": "example-host",
@@ -23,16 +31,16 @@ function runStack(cloud) {
       "rootstock:sshUsername": "root",
     } : {}),
   };
-  return spawnSync(process.execPath, ["tests/stack.cjs"], {
+  return spawnSync(process.execPath, ["bin/tests/stack.js"], {
     encoding: "utf8", env: { ...process.env, PULUMI_CONFIG: JSON.stringify(config) }, timeout: 30000,
   });
 }
 
 /** Protects SSH exposure and the provider-independent deployment output. */
-function verifyHost(cloud, type) {
+function verifyHost(cloud: string, type: string) {
   const result = runStack(cloud);
   assert.equal(result.status, 0, result.stderr);
-  const stack = JSON.parse(result.stdout);
+  const stack: StackResult = JSON.parse(result.stdout);
   assert.equal(stack.cloud, cloud);
   assert.equal(stack.ip, "203.0.113.10");
   assert.equal(stack.dockerHost, `ssh://${cloud === "aws" ? "ubuntu" : "root"}@203.0.113.10`);
@@ -41,8 +49,9 @@ function verifyHost(cloud, type) {
   assert.match(host.inputs.userData, /docker-compose-plugin/);
   assert.ok(stack.resources.some(resource => resource.type === "command:remote:Command"));
   const firewall = stack.resources.find(resource => /SecurityGroup|Firewall/.test(resource.type));
+  assert.ok(firewall, "missing host firewall");
   const rules = firewall.inputs.ingress || firewall.inputs.inboundRules;
-  const ssh = rules.find(rule => rule.fromPort === 22 || rule.portRange === "22");
+  const ssh = rules.find((rule: { fromPort?: number; portRange?: string }) => rule.fromPort === 22 || rule.portRange === "22");
   assert.deepEqual(ssh.cidrBlocks || ssh.sourceAddresses, ["203.0.113.0/24"]);
   assert.ok(!stack.resources.some(resource => resource.type.startsWith(cloud === "aws" ? "digitalocean:" : "aws:")));
 }

@@ -6,6 +6,11 @@ description = "Deploy independent web applications on one small server with vali
 license = "MIT"
 readme = "README.md"
 
+[workspace]
+members = ["tests/sqlite"]
+default-members = ["."]
+resolver = "3"
+
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.6", features = ["derive"] }

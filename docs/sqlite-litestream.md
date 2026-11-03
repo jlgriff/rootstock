@@ -197,10 +197,21 @@ databases also requires explicit preparation and recovery for each.
 ./tests/sqlite/run.sh
 ```
 
-The drill uses the public template, disposable volumes, a synthetic SQLite writer, and local
+The drill uses the public template, disposable volumes, a synthetic Rust SQLite writer, and local
 S3-compatible storage provided by a digest-pinned RustFS container. A one-off AWS CLI container
 creates its test bucket. Both images support AMD64 and ARM64 and require no private registry
-credentials. This object store is a disposable test dependency; deployments continue to use the
+credentials. The writer is a separate Cargo workspace package (`sqlite-fixture`) with bundled
+SQLite, built into a static binary in a scratch image. It adds no SQLite dependency to the rootstock
+CLI and needs no Python runtime. Run its unit test with `cargo test -p sqlite-fixture` or include it
+with `cargo test --workspace`.
+
+The fixture reads `DATABASE_PATH` (default `/data/app.db`). Its default `serve` command holds a WAL
+connection open; `health` checks the schema, `insert` writes the drill's marker, and `verify` checks
+integrity and the recovered marker. `assert-missing` checks that recovery left no database;
+`remove` deletes the disposable database and its SQLite sidecars to simulate data loss. Commands
+that open SQLite require an existing file, so a failed recovery cannot silently create an empty one.
+
+This object store is a disposable test dependency; deployments continue to use the
 configured off-host S3-compatible provider. Built fixture images reuse `rootstock-sqlite-app:test`
 and `rootstock-sqlite-backup:test`; reruns rebuild those tags and keep them cached. Test builds omit
 provenance attestations so identical inputs retain the same image ID; changed contents still create

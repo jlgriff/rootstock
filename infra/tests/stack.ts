@@ -1,5 +1,7 @@
-const pulumi = require("@pulumi/pulumi");
-const resources = [];
+import * as pulumi from "@pulumi/pulumi";
+import type { MockResourceArgs } from "@pulumi/pulumi/runtime";
+
+const resources: Pick<MockResourceArgs, "type" | "name" | "inputs">[] = [];
 
 /** Runs the real stack against an in-memory provider monitor. */
 async function main() {
@@ -18,8 +20,8 @@ async function main() {
       throw new Error(`Unexpected provider lookup: ${args.token}`);
     },
   }, "rootstock", "test");
-  const stack = require("../bin/index.js");
-  const [ip, dockerHost] = await new Promise(resolve => {
+  const stack = await import("../index");
+  const [ip, dockerHost] = await new Promise<[string, string, string]>(resolve => {
     pulumi.all([stack.publicIp, stack.dockerHost, stack.proxyStarted]).apply(resolve);
   });
   process.stdout.write(JSON.stringify({ cloud: stack.cloud, ip, dockerHost, resources }));

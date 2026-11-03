@@ -25,7 +25,7 @@ compose() {
 # Ensures failed recovery cannot leave a database that the app might treat as new.
 assert_no_database() {
   docker run --rm --network none --mount "type=volume,source=$1,target=/data,readonly" \
-    --entrypoint python "$APP_IMAGE" -c 'from pathlib import Path; assert not Path("/data/app.db").exists(), "failed recovery left a database behind"'
+    "$APP_IMAGE" assert-missing
 }
 
 # Removes only this drill's temporary containers, volumes, and network.
@@ -74,7 +74,7 @@ networks:
 CONF
 
 docker build --provenance=false -q -t "$SQLITE_BACKUP_IMAGE" examples/sqlite-litestream >/dev/null
-docker build --provenance=false -q -t "$APP_IMAGE" tests/sqlite >/dev/null
+docker build --provenance=false -q -t "$APP_IMAGE" -f tests/sqlite/Dockerfile . >/dev/null
 docker network create "$project-proxy" >/dev/null
 compose up -d --wait object-store
 compose run --rm --no-deps object-init >/dev/null
@@ -88,7 +88,7 @@ echo 'ok: empty volume with no backup blocks deployment'
 
 compose run --rm --no-deps prepare initialize
 cargo run -q -- --apps "$work/apps" deploy "$name"
-compose exec -T web python -c 'import os,sqlite3; connection=sqlite3.connect(os.environ["DATABASE_PATH"]); connection.execute("INSERT INTO checks VALUES (?)", ("restore-marker",)); connection.commit()'
+compose exec -T web /sqlite-fixture insert
 compose exec -T backup litestream sync -socket /tmp/litestream.sock -wait /data/app.db
 docker stats --no-stream --format 'backup container memory: {{.MemUsage}}' "$(compose ps -q backup)"
 
@@ -104,11 +104,11 @@ echo 'ok: initialization and recovery refuse to replace existing data'
 
 compose stop web backup
 SQLITE_DATA_VOLUME="$project-recovered" cargo run -q -- --apps "$work/apps" deploy "$name"
-compose exec -T web python -c 'import os,sqlite3; connection=sqlite3.connect(os.environ["DATABASE_PATH"]); assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",); assert connection.execute("SELECT token FROM checks").fetchall() == [("restore-marker",)]'
+compose exec -T web /sqlite-fixture verify
 echo 'ok: fresh volume recovered the committed marker from object storage before app startup'
 
 compose stop web backup
-SQLITE_DATA_VOLUME="$project-recovered" compose run --rm --no-deps --entrypoint python web -c 'import os; from pathlib import Path; path=os.environ["DATABASE_PATH"]; [Path(path + suffix).unlink(missing_ok=True) for suffix in ("", "-wal", "-shm", "-journal")]'
+SQLITE_DATA_VOLUME="$project-recovered" compose run --rm --no-deps web remove
 web=$(compose ps -aq web)
 docker update --restart=no "$web" >/dev/null
 docker start "$(compose ps -aq backup)" "$web" >/dev/null

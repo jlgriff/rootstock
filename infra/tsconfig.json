@@ -12,5 +12,5 @@
     "noImplicitReturns": true,
     "forceConsistentCasingInFileNames": true
   },
-  "files": ["index.ts", "config.ts", "infrastructure.ts", "traefik.ts"]
+  "include": ["*.ts", "tests/*.ts"]
 }

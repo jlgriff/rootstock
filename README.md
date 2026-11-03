@@ -62,8 +62,12 @@ Docker socket proxy. Measure idle and loaded memory before deciding how many app
 - [MIT license](LICENSE).
 
 ```sh
-cargo test
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
+cargo test --workspace
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
 cd infra && npm ci && npm run typecheck && npm test
 ```
+
+The CLI and SQLite test fixture use Rust. Optional Pulumi infrastructure and its mock tests use
+TypeScript with Pulumi's supported SDK; Node.js runs only on your workstation or in CI.
+Small shell scripts handle container and host setup. None adds a management process to the server.
