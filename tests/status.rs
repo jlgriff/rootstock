@@ -347,6 +347,37 @@ fn observe_serves_escaped_status_on_loopback() {
     assert!(!response.contains("must-never-appear"));
 }
 
+/// Keeps the favicon identical to the console logo and independent of Docker availability.
+#[test]
+fn observe_serves_the_shared_logo_as_its_favicon() {
+    let fixture = Fixture::new();
+    let response = fixture.page("/favicon.svg");
+    let (headers, svg) = response.split_once("\r\n\r\n").unwrap();
+    assert!(headers.contains("200 OK"), "{headers}");
+    assert!(
+        headers
+            .to_ascii_lowercase()
+            .contains("content-type: image/svg+xml"),
+        "{headers}"
+    );
+    assert!(svg.starts_with("<svg"), "{svg}");
+    let page = fixture.page("/");
+    assert!(page.contains("<link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\">"));
+    assert!(
+        page.contains(svg.trim()),
+        "header and favicon must use the same SVG"
+    );
+    assert!(page.contains("img-src 'self'"));
+    fs::write(
+        fixture.directory.path().join("docker"),
+        "#!/bin/sh\nprintf called > \"$FIXTURE_DIRECTORY/favicon-queried\"\nexit 1\n",
+    )
+    .unwrap();
+    let response = fixture.page("/favicon.svg");
+    assert!(response.contains("200 OK"), "{response}");
+    assert!(!fixture.directory.path().join("favicon-queried").exists());
+}
+
 /// Links known local web bindings while leaving database ports and stopped services unlinked.
 #[test]
 fn local_web_bindings_become_browser_links() {

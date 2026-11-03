@@ -8,7 +8,7 @@ own page and health routes.
 | Interface | Operations | Access |
 | --- | --- | --- |
 | MCP stdio | `list_apps`, `get_status`, `check_routes`, `plan_deploy` | Client-launched `rootstock-mcp` process |
-| Console HTTP | `GET /`, optionally with `inspect` | Loopback listener started by `rootstock observe` |
+| Console HTTP | `GET /`, optionally with `inspect`; `GET /favicon.svg` | Loopback listener started by `rootstock observe` |
 
 Use [MCP setup](mcp.md) for client configuration and [console configuration](configuration.md#live-status-and-local-dashboard)
 for port and refresh settings. The [OpenAPI document](http.openapi.yaml) describes the HTTP route.
@@ -318,7 +318,7 @@ curl http://127.0.0.1:8787/
 curl 'http://127.0.0.1:8787/?inspect=0'
 ```
 
-Only `/` and `/?inspect=<unsigned-index>` are accepted. Other query parameters, duplicate
+The overview accepts only `/` and `/?inspect=<unsigned-index>`. Other query parameters, duplicate
 parameters, and invalid index syntax return 404. An out-of-range numeric index renders the
 overview with all details closed. Indices describe snapshot order, not persistent identifiers.
 Each request collects fresh data. Automatic refresh retains the current URL and selected index.
@@ -337,3 +337,22 @@ Content Security Policy. No CORS access is advertised. Assets are embedded; no e
 requests or browser JavaScript are needed. HTTP authentication is not implemented; access is
 restricted by the loopback listener and Host check. Reads use the operator's configured Docker/SSH
 credentials. The console adds no public proxy route.
+
+### `GET /favicon.svg`
+
+Returns the same embedded SVG used for the console's header logo. It requires the same loopback
+Host header as the overview. No query parameters are accepted.
+
+| Status | Content type | Meaning |
+| --- | --- | --- |
+| `200` | `image/svg+xml` | Shared logo artwork |
+| `400` | `text/html; charset=utf-8` | Unexpected Host header |
+| `404` | `text/html; charset=utf-8` | Unsupported query syntax |
+| `405` | `text/html; charset=utf-8` | Method is not GET, including HEAD |
+
+The route uses the console's cache, content-security, and content-type protection headers. It
+does not read inventory or query Docker, so it remains available when the overview returns 503.
+
+```sh
+curl --fail http://127.0.0.1:8787/favicon.svg
+```

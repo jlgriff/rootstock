@@ -36,33 +36,64 @@ paths:
               schema:
                 type: string
         '400':
-          description: Unexpected Host header; checked before the method or path.
-          content:
-            text/html:
-              schema:
-                type: string
-              example: Unexpected Host header
+          $ref: '#/components/responses/UnexpectedHost'
         '404':
-          description: Unsupported path or query syntax.
-          content:
-            text/html:
-              schema:
-                type: string
-              example: Not found
+          $ref: '#/components/responses/NotFound'
         '405':
-          description: Only GET is supported, including rejection of HEAD.
-          content:
-            text/html:
-              schema:
-                type: string
-              example: Only GET is supported
+          $ref: '#/components/responses/MethodNotAllowed'
         '503':
           description: HTML error view with expandable Docker/SSH or inventory diagnostics.
           content:
             text/html:
               schema:
                 type: string
+  /favicon.svg:
+    get:
+      operationId: getConsoleFavicon
+      summary: Read the shared console logo as an SVG favicon
+      description: >-
+        Returns the same embedded artwork used by the header. Host must be
+        127.0.0.1:<port> or localhost:<port>. No query parameters are accepted.
+        This route does not query Docker or read inventory.
+      responses:
+        '200':
+          description: Shared SVG logo, available independently of Docker connectivity.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/UnexpectedHost'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
 components:
+  responses:
+    UnexpectedHost:
+      description: Unexpected Host header; checked before the method or path.
+      content:
+        text/html:
+          schema:
+            type: string
+          example: Unexpected Host header
+    NotFound:
+      description: Unsupported path or query syntax.
+      content:
+        text/html:
+          schema:
+            type: string
+          example: Not found
+    MethodNotAllowed:
+      description: Only GET is supported, including rejection of HEAD.
+      content:
+        text/html:
+          schema:
+            type: string
+          example: Only GET is supported
   headers:
     NoStore:
       description: Responses are not cached; applies to error responses as well.

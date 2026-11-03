@@ -7,6 +7,8 @@ use tiny_http::{Header, Method, Response, Server};
 
 use crate::status::{self, AppStatus, ServiceStatus, Snapshot};
 
+const LOGO: &str = include_str!("logo.svg");
+
 /// Escapes container metadata before inserting it into browser markup.
 fn escape(value: &str) -> String {
     value
@@ -20,9 +22,6 @@ fn escape(value: &str) -> String {
 /// Supplies small inline icons without fonts, scripts, or external requests.
 fn icon(name: &str) -> String {
     let path = match name {
-        "brand" => {
-            r#"<path d="M12 20V9m0 4-6-6m6 9 6-6"/><path d="M6 7H3V4h3v3Zm12 3h3V7h-3v3ZM12 9h3V6h-3v3Z"/>"#
-        }
         "refresh" => {
             r#"<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/>"#
         }
@@ -47,13 +46,13 @@ fn document(content: &str, refresh: u64) -> String {
     format!(
         r#"<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="{refresh}"><title>Overview · Rootstock</title><style>{}</style></head>
-<body class="bg-canvas font-sans text-ink antialiased"><header class="h-16 border-b border-slate-200 bg-white sm:h-18"><div class="mx-auto flex h-full max-w-[1248px] items-center justify-between gap-4 px-5 sm:px-6 lg:px-10"><a class="flex min-w-0 items-center gap-2.5 text-[19px] font-semibold tracking-[-0.7px] no-underline sm:text-[21px]" href="/"><span class="grid size-8 shrink-0 place-items-center rounded-[9px] bg-brand text-white [&>svg]:size-6">{}</span>rootstock<span class="ml-2 hidden border-l border-slate-200 pl-5 text-[13px] font-normal tracking-normal text-muted sm:inline">Console</span></a><span class="flex shrink-0 items-center gap-2 text-[10px] text-muted sm:text-xs [&>span]:size-1.5 [&>span]:rounded-full [&>span]:bg-slate-400"><span></span>Read-only session</span></div></header>
+<meta http-equiv="refresh" content="{refresh}"><title>Overview · Rootstock</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"><style>{}</style></head>
+<body class="bg-canvas font-sans text-ink antialiased"><header class="h-16 border-b border-slate-200 bg-white sm:h-18"><div class="mx-auto flex h-full max-w-[1248px] items-center justify-between gap-4 px-5 sm:px-6 lg:px-10"><a class="flex min-w-0 items-center gap-2.5 text-[19px] font-semibold tracking-[-0.7px] no-underline sm:text-[21px]" href="/"><span class="grid size-8 shrink-0 place-items-center">{}</span>rootstock<span class="ml-2 hidden border-l border-slate-200 pl-5 text-[13px] font-normal tracking-normal text-muted sm:inline">Console</span></a><span class="flex shrink-0 items-center gap-2 text-[10px] text-muted sm:text-xs [&>span]:size-1.5 [&>span]:rounded-full [&>span]:bg-slate-400"><span></span>Read-only session</span></div></header>
 <main class="mx-auto min-w-0 max-w-[1248px] px-5 pt-7 pb-6 sm:px-6 lg:px-10 lg:pt-10"><div class="mb-8 flex flex-col items-start justify-between gap-5 lg:flex-row lg:items-end"><div><p class="mb-3.5 text-xs text-muted [&>span]:px-2.5 [&>span]:text-slate-400">Workspace <span>/</span> Overview</p><h1 class="text-[29px] leading-tight font-semibold tracking-tight sm:text-[32px]">Overview</h1><p class="mt-2.5 text-xs text-muted sm:text-sm">Deployment health, routes, and resource usage.</p></div>
 <div class="flex w-full items-center justify-between gap-4 lg:w-auto"><span class="flex items-center gap-2 whitespace-nowrap text-xs text-muted"><span class="inline-block size-1.5 shrink-0 rounded-full bg-emerald-700 ring-[3px] ring-emerald-50"></span>Updates every {refresh}s</span><a href="" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-medium shadow-xs transition hover:border-slate-400 hover:bg-slate-50 [&>svg]:size-3.5 [&>svg]:text-muted">{}Refresh</a></div></div>
 {content}<footer class="mt-10 flex items-start justify-between gap-6 border-t border-slate-200 pt-5 text-[10px] leading-relaxed text-muted lg:mt-12 [&>span:first-child]:max-w-[260px]"><span>Health reflects container checks. Public routes are not probed.</span><span>Rootstock console</span></footer></main></body></html>"#,
         include_str!("dashboard.css"),
-        icon("brand"),
+        LOGO,
         icon("refresh")
     )
 }
@@ -394,6 +393,8 @@ pub fn serve(root: &Path, port: u16, refresh: u64) -> Result<()> {
             (400, "Unexpected Host header".to_string())
         } else if request.method() != &Method::Get {
             (405, "Only GET is supported".to_string())
+        } else if request.url() == "/favicon.svg" {
+            (200, LOGO.to_string())
         } else if request.url() != "/" && inspect.is_none() {
             (404, "Not found".to_string())
         } else {
@@ -412,13 +413,18 @@ pub fn serve(root: &Path, port: u16, refresh: u64) -> Result<()> {
                 ),
             }
         };
+        let content_type = if code == 200 && request.url() == "/favicon.svg" {
+            "image/svg+xml"
+        } else {
+            "text/html; charset=utf-8"
+        };
         let mut response = Response::from_string(body).with_status_code(code);
         for (name, value) in [
-            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Type", content_type),
             ("Cache-Control", "no-store"),
             (
                 "Content-Security-Policy",
-                "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+                "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
             ),
             ("X-Content-Type-Options", "nosniff"),
         ] {
