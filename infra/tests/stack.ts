@@ -11,7 +11,7 @@ async function main() {
       resources.push({ type: args.type, name: args.name, inputs: args.inputs });
       return {
         id: args.type === "digitalocean:index/droplet:Droplet" ? "123" : `${args.name}-id`,
-        state: { ...args.inputs, publicIp: "203.0.113.10", ipAddress: "203.0.113.10", ipv4Address: "203.0.113.11" },
+        state: { ...args.inputs, publicIp: "203.0.113.10", ipAddress: "203.0.113.10", ipv4Address: "203.0.113.11", dropletUrn: "do:droplet:123" },
       };
     },
     /** Supplies a public Ubuntu image without requiring AWS credentials. */

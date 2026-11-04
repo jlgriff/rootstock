@@ -39,7 +39,17 @@ function createDigitalOceanHost(config: Extract<InfraConfig, { cloud: "digitaloc
       { protocol: "icmp", portRange: "1-65535", destinationAddresses: ["0.0.0.0/0", "::/0"] },
     ],
   });
-  return { id: droplet.id, publicIp: address.ipAddress, dependencies: [droplet, address, firewall] };
+  const dependencies: pulumi.Resource[] = [droplet, address, firewall];
+  if (config.projectId) {
+    dependencies.push(new digitalocean.ProjectResources(`${config.name}-project`, {
+      project: config.projectId,
+      resources: [
+        droplet.dropletUrn,
+        pulumi.interpolate`do:floatingip:${address.ipAddress}`,
+      ],
+    }));
+  }
+  return { id: droplet.id, publicIp: address.ipAddress, dependencies };
 }
 
 /** Provisions an IPv4 Ubuntu host without a NAT gateway or load balancer. */

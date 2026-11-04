@@ -4,6 +4,8 @@ config:
   do:region: nyc1
   do:dropletSize: s-1vcpu-1gb
   do:dropletName: rootstock-host
+  do:projectId: replace-with-existing-project-id
   do:sshKeyFingerprints: replace-with-uploaded-key-fingerprint
   rootstock:sshUsername: root
+  rootstock:sshAgent: true
   rootstock:acmeEmail: admin@example.com

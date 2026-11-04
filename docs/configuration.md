@@ -221,6 +221,11 @@ for existing stacks). Only the chosen provider's host settings are required.
 
 For DigitalOcean, authenticate with `DIGITALOCEAN_TOKEN` or a secret `digitalocean:token` setting;
 see the [provider configuration](https://www.pulumi.com/registry/packages/digitalocean/).
+To use an existing DigitalOcean project, set `do:projectId` to its UUID from the console URL.
+The token needs `project:read` and `project:assign_resource` in addition to the host resource scopes.
+Rootstock assigns only its Droplet and reserved IP; it does not create, rename, or delete the project.
+Firewalls and SSH keys are managed outside project grouping. Projects group resources within a team;
+they do not restrict an API token to a particular project.
 For AWS, use your usual AWS credentials/profile or workload identity; `aws:region` selects the region.
 
 ```sh
@@ -239,12 +244,21 @@ match its `Pulumi.<stack>.yaml` filename. If you already use Pulumi, select your
 instead. Do not replace an existing stack's encryption metadata when adopting the example.
 
 ```sh
-pulumi config set --secret sshPrivateKey < ~/.ssh/id_ed25519
+pulumi config set rootstock:sshAgent true
+ssh-add ~/.ssh/id_ed25519
 pulumi preview
 pulumi up
 ```
 
-For an encrypted key, also set `pulumi config set --secret sshPrivateKeyPassphrase` interactively.
+Agent authentication uses the current `SSH_AUTH_SOCK` and keeps private key material out of provisioning
+resource inputs. Load the matching key into your local agent before provisioning; no agent is installed
+on the VM. On macOS, `/usr/bin/ssh-add --apple-use-keychain ~/.ssh/id_ed25519` also stores its passphrase
+in macOS Keychain. The encrypted private key file remains under `~/.ssh`; Keychain stores its passphrase.
+
+For provisioning without a local agent, set `rootstock:sshAgent` to `false` and run
+`pulumi config set --secret rootstock:sshPrivateKey < ~/.ssh/id_ed25519`. If that key is encrypted,
+also set `pulumi config set --secret rootstock:sshPrivateKeyPassphrase` interactively. This mode stores
+encrypted private key material in stack configuration and provisioning state.
 Review the preview before applying. Import/reconcile existing cloud resources instead of assuming
 a matching name adopts them. Stack files are ignored even when their secrets are encrypted.
 
@@ -254,12 +268,14 @@ a matching name adopts them. Stack files are ignored even when their secrets are
 | `rootstock:hostName` | AWS: yes | Resource name; defaults to `do:dropletName` on DigitalOcean; changing it can replace resources |
 | `rootstock:sshCidr` | No | IPv4 CIDR permitted on TCP 22; defaults to `0.0.0.0/0` for existing-stack compatibility; samples require replacing a reserved CIDR |
 | `rootstock:sshUsername` | No | SSH bootstrap user; defaults to `ubuntu` on AWS and `root` on DigitalOcean; must support passwordless sudo |
-| `rootstock:sshPrivateKey` | Yes, secret | Private key used by provisioning commands |
-| `rootstock:sshPrivateKeyPassphrase` | Optional secret | Passphrase for the private key |
+| `rootstock:sshAgent` | No | Use the local agent at `SSH_AUTH_SOCK`, omitting private key inputs; defaults to `false` for existing-stack compatibility |
+| `rootstock:sshPrivateKey` | Unless `sshAgent=true`, secret | Private key used by provisioning commands |
+| `rootstock:sshPrivateKeyPassphrase` | Optional secret | Passphrase for the private key; ignored in agent mode |
 | `rootstock:acmeEmail` | Yes | ACME account contact email for hosted domains |
 | `do:region` | DigitalOcean: yes | Region slug |
 | `do:dropletSize` | DigitalOcean: yes | Droplet size slug; example sizing is not a measured capacity guarantee |
 | `do:dropletName` | DigitalOcean: unless `hostName` is set | Existing resource name, retained for compatibility |
+| `do:projectId` | No | Existing DigitalOcean project UUID for this stack's Droplet and reserved IP; unset uses the account's default project placement |
 | `do:sshKeyFingerprints` | DigitalOcean: yes | Comma-separated uploaded key fingerprints; surrounding whitespace is trimmed |
 | `aws:region` | AWS: configure here or in your AWS environment | Region used by the standard Pulumi AWS provider |
 | `ec2:instanceType` | AWS: yes | x86-64 EC2 instance type, such as `t3.micro`; ARM instance types are not supported by the current AMI |
