@@ -59,7 +59,7 @@ Docker timeout, background polling, stored metrics, HTTP transport, or additiona
 | Tool | Purpose |
 | --- | --- |
 | [`list_apps`](api.md#list_apps) | Read registered app names, profiles, and declared domains |
-| [`get_status`](api.md#get_status) | Read live container state, ports, health, and resource samples |
+| [`get_status`](api.md#get_status) | Read live container state, browser links, ports, health, and resource samples |
 | [`check_routes`](api.md#check_routes) | Validate hostname ownership across the local inventory |
 | [`plan_deploy`](api.md#plan_deploy) | Describe a validated Compose deployment command without executing it |
 

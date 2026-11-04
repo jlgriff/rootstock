@@ -2,13 +2,13 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
-/// Rehearses the public example release with explicit deployment inputs.
+/// Rehearses the reusable deployment template with explicit release inputs.
 fn deploy(image: &str, domain: &str) -> Output {
     let inventory = tempfile::tempdir().expect("the example inventory should be created");
     let app = inventory.path().join("web");
     fs::create_dir(&app).expect("the example application should be created");
     fs::copy(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/web/compose.yml"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/web/compose.yml"),
         app.join("compose.yml"),
     )
     .expect("the public template should be copied");
@@ -22,7 +22,7 @@ fn deploy(image: &str, domain: &str) -> Output {
         .expect("the CLI should run")
 }
 
-/// Ensures the example application can be released through the CLI without starting containers.
+/// Ensures the deployment template works through the CLI without starting containers.
 #[test]
 fn rehearses_a_web_release() {
     let output = deploy("ghcr.io/example/web:release", "app.example.com");

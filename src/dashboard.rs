@@ -7,6 +7,8 @@ use tiny_http::{Header, Method, Response, Server};
 
 use crate::status::{self, AppStatus, ServiceStatus, Snapshot};
 
+const LOGO: &str = include_str!("logo.svg");
+
 /// Escapes container metadata before inserting it into browser markup.
 fn escape(value: &str) -> String {
     value
@@ -20,9 +22,6 @@ fn escape(value: &str) -> String {
 /// Supplies small inline icons without fonts, scripts, or external requests.
 fn icon(name: &str) -> String {
     let path = match name {
-        "brand" => {
-            r#"<path d="M12 20V9m0 4-6-6m6 9 6-6"/><path d="M6 7H3V4h3v3Zm12 3h3V7h-3v3ZM12 9h3V6h-3v3Z"/>"#
-        }
         "refresh" => {
             r#"<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/>"#
         }
@@ -32,6 +31,9 @@ fn icon(name: &str) -> String {
         "chevron" => r#"<path d="m9 5 7 7-7 7"/>"#,
         "check" => r#"<path d="m5 12 4 4L19 6"/>"#,
         "alert" => r#"<path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v4m0 4h.01"/>"#,
+        "external" => {
+            r#"<path d="M14 3h7v7m0-7L10 14"/><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/>"#
+        }
         _ => r#"<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6m-6 5h6m-6 5h3"/>"#,
     };
     format!(
@@ -44,13 +46,13 @@ fn document(content: &str, refresh: u64) -> String {
     format!(
         r#"<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="{refresh}"><title>Overview · Rootstock</title><style>{}</style></head>
-<body class="bg-canvas font-sans text-ink antialiased"><header class="h-16 border-b border-slate-200 bg-white sm:h-18"><div class="mx-auto flex h-full max-w-[1248px] items-center justify-between gap-4 px-5 sm:px-6 lg:px-10"><a class="flex min-w-0 items-center gap-2.5 text-[19px] font-semibold tracking-[-0.7px] no-underline sm:text-[21px]" href="/"><span class="grid size-8 shrink-0 place-items-center rounded-[9px] bg-brand text-white [&>svg]:size-6">{}</span>rootstock<span class="ml-2 hidden border-l border-slate-200 pl-5 text-[13px] font-normal tracking-normal text-muted sm:inline">Console</span></a><span class="flex shrink-0 items-center gap-2 text-[10px] text-muted sm:text-xs [&>span]:size-1.5 [&>span]:rounded-full [&>span]:bg-slate-400"><span></span>Read-only session</span></div></header>
+<meta http-equiv="refresh" content="{refresh}"><title>Overview · Rootstock</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"><style>{}</style></head>
+<body class="bg-canvas font-sans text-ink antialiased"><header class="h-16 border-b border-slate-200 bg-white sm:h-18"><div class="mx-auto flex h-full max-w-[1248px] items-center justify-between gap-4 px-5 sm:px-6 lg:px-10"><a class="flex min-w-0 items-center gap-2.5 text-[19px] font-semibold tracking-[-0.7px] no-underline sm:text-[21px]" href="/"><span class="grid size-8 shrink-0 place-items-center">{}</span>rootstock<span class="ml-2 hidden border-l border-slate-200 pl-5 text-[13px] font-normal tracking-normal text-muted sm:inline">Console</span></a><span class="flex shrink-0 items-center gap-2 text-[10px] text-muted sm:text-xs [&>span]:size-1.5 [&>span]:rounded-full [&>span]:bg-slate-400"><span></span>Read-only session</span></div></header>
 <main class="mx-auto min-w-0 max-w-[1248px] px-5 pt-7 pb-6 sm:px-6 lg:px-10 lg:pt-10"><div class="mb-8 flex flex-col items-start justify-between gap-5 lg:flex-row lg:items-end"><div><p class="mb-3.5 text-xs text-muted [&>span]:px-2.5 [&>span]:text-slate-400">Workspace <span>/</span> Overview</p><h1 class="text-[29px] leading-tight font-semibold tracking-tight sm:text-[32px]">Overview</h1><p class="mt-2.5 text-xs text-muted sm:text-sm">Deployment health, routes, and resource usage.</p></div>
 <div class="flex w-full items-center justify-between gap-4 lg:w-auto"><span class="flex items-center gap-2 whitespace-nowrap text-xs text-muted"><span class="inline-block size-1.5 shrink-0 rounded-full bg-emerald-700 ring-[3px] ring-emerald-50"></span>Updates every {refresh}s</span><a href="" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-medium shadow-xs transition hover:border-slate-400 hover:bg-slate-50 [&>svg]:size-3.5 [&>svg]:text-muted">{}Refresh</a></div></div>
 {content}<footer class="mt-10 flex items-start justify-between gap-6 border-t border-slate-200 pt-5 text-[10px] leading-relaxed text-muted lg:mt-12 [&>span:first-child]:max-w-[260px]"><span>Health reflects container checks. Public routes are not probed.</span><span>Rootstock console</span></footer></main></body></html>"#,
         include_str!("dashboard.css"),
-        icon("brand"),
+        LOGO,
         icon("refresh")
     )
 }
@@ -201,6 +203,15 @@ fn badge(label: &str, tone: &str) -> String {
     )
 }
 
+/// Presents shared endpoint URLs as escaped links that preserve the console in its current tab.
+fn browser_links<'a>(links: impl Iterator<Item = &'a String>) -> String {
+    let links: std::collections::BTreeSet<_> = links.collect();
+    links.into_iter().map(|url| format!(
+        r#"<a class="inline-flex max-w-full items-center gap-1 text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand focus-visible:outline-2 focus-visible:outline-offset-2 [&>svg]:size-3" href="{}" target="_blank" rel="noopener noreferrer"><span class="min-w-0 wrap-anywhere">{}</span>{}</a>"#,
+        escape(url), escape(url), icon("external")
+    )).collect::<Vec<_>>().join("<br>")
+}
+
 /// Keeps the full container inventory available behind a deployment's inspection control.
 fn service_details(app: &AppStatus, index: usize, open: bool) -> String {
     let hidden = if open { "" } else { " hidden" };
@@ -244,6 +255,10 @@ fn service_details(app: &AppStatus, index: usize, open: bool) -> String {
         let domains = service.domain_status();
         if !domains.is_empty() {
             ports.push_str(&format!("<small>{}</small>", escape(&domains)));
+        }
+        let links = browser_links(service.links.iter());
+        if !links.is_empty() {
+            ports.push_str(&format!("<small>{links}</small>"));
         }
         content.push_str(&format!(r#"<tr><td><strong>{}</strong><small class="max-w-[250px] wrap-anywhere">{}</small></td><td>{}<small>{}</small></td><td>{ports}</td><td class="whitespace-nowrap tabular-nums">{}</td><td class="whitespace-nowrap tabular-nums">{}</td><td class="whitespace-nowrap tabular-nums">{}</td><td class="whitespace-nowrap tabular-nums">{}</td></tr>"#,
             escape(&service.service), escape(&service.container), badge(label, tone), escape(&health),
@@ -319,11 +334,14 @@ fn render(snapshot: &Snapshot, refresh: u64, inspect: Option<usize>) -> String {
             .iter()
             .flat_map(|service| &service.domains)
             .collect();
-        let endpoint = if domains.is_empty() {
-            "No domain assigned".to_string()
-        } else {
-            domains.into_iter().cloned().collect::<Vec<_>>().join(", ")
-        };
+        let mut endpoint = browser_links(app.services.iter().flat_map(|service| &service.links));
+        if endpoint.is_empty() {
+            endpoint = escape(&if domains.is_empty() {
+                "No domain assigned".to_string()
+            } else {
+                domains.into_iter().cloned().collect::<Vec<_>>().join(", ")
+            });
+        }
         let open = inspect == Some(index);
         let href = if open {
             format!("/#deployment-{index}")
@@ -340,7 +358,7 @@ fn render(snapshot: &Snapshot, refresh: u64, inspect: Option<usize>) -> String {
 <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 gap-y-5 p-5 lg:grid-cols-[minmax(200px,1fr)_140px_110px_75px_100px] lg:gap-4 lg:p-6"><div class="col-span-full flex min-w-0 items-start gap-3 lg:col-span-1 lg:gap-4 [&>div]:min-w-0 [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:tracking-tight [&_h3]:wrap-anywhere"><span class="grid size-[42px] shrink-0 place-items-center rounded-xl border border-emerald-100 bg-emerald-50/60 text-emerald-700 [&>svg]:size-[21px]">{}</span><div><h3 id="deployment-name-{index}">{}</h3><p class="mt-1.5 text-xs leading-relaxed text-muted wrap-anywhere">{}</p><p class="mt-1.5 text-[11px] leading-relaxed text-muted">{running} running · {} containers{extra}</p></div></div>
 <div class="min-w-0 self-center">{}</div><div class="flex min-w-0 flex-col gap-2 [&>span]:text-[10px] [&>span]:text-muted sm:[&>span]:text-[11px] [&>strong]:whitespace-nowrap [&>strong]:text-xs [&>strong]:font-medium [&>strong]:text-slate-700 [&>strong]:tabular-nums sm:[&>strong]:text-[13px]"><span>Memory</span><strong>{}</strong></div><div class="flex min-w-0 flex-col gap-2 [&>span]:text-[10px] [&>span]:text-muted sm:[&>span]:text-[11px] [&>strong]:whitespace-nowrap [&>strong]:text-xs [&>strong]:font-medium [&>strong]:text-slate-700 [&>strong]:tabular-nums sm:[&>strong]:text-[13px]"><span>CPU</span><strong>{cpu}</strong></div>
 <a class="col-span-full inline-flex items-center justify-between gap-2 whitespace-nowrap border-t border-slate-100 pt-4 text-xs font-medium text-muted hover:text-brand lg:col-span-1 lg:justify-end lg:border-0 lg:pt-0 [&>svg]:size-3 [&>svg]:text-muted aria-expanded:[&>svg]:rotate-90" href="{href}" aria-expanded="{open}" aria-controls="inspection-{index}">{action}{}</a></div>{}</article>"#,
-            icon("stack"), escape(&app.name), escape(&endpoint), app.services.len(), badge(label, tone), memory_label(memory), icon("chevron"), service_details(app, index, open)));
+            icon("stack"), escape(&app.name), endpoint, app.services.len(), badge(label, tone), memory_label(memory), icon("chevron"), service_details(app, index, open)));
     }
     if snapshot.apps.is_empty() {
         content.push_str(&format!(r#"<div class="rounded-xl border border-slate-200 bg-white px-6 py-14 text-center [&_h3]:text-[17px] [&_h3]:font-semibold [&_p]:mx-auto [&_p]:mt-3 [&_p]:mb-6 [&_p]:max-w-sm [&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:text-muted [&_code]:rounded-md [&_code]:border [&_code]:border-slate-200 [&_code]:bg-slate-50 [&_code]:px-3.5 [&_code]:py-2.5 [&_code]:text-xs [&_code]:text-muted"><span class="mx-auto mb-5 grid size-12 place-items-center rounded-xl bg-emerald-50 text-emerald-700">{}</span><h3>Your first deployment starts here</h3><p>Deploy an app to this Docker host, then refresh to see its health and resource usage.</p><code>rootstock deploy &lt;name&gt;</code></div>"#, icon("stack")));
@@ -375,6 +393,8 @@ pub fn serve(root: &Path, port: u16, refresh: u64) -> Result<()> {
             (400, "Unexpected Host header".to_string())
         } else if request.method() != &Method::Get {
             (405, "Only GET is supported".to_string())
+        } else if request.url() == "/favicon.svg" {
+            (200, LOGO.to_string())
         } else if request.url() != "/" && inspect.is_none() {
             (404, "Not found".to_string())
         } else {
@@ -393,13 +413,18 @@ pub fn serve(root: &Path, port: u16, refresh: u64) -> Result<()> {
                 ),
             }
         };
+        let content_type = if code == 200 && request.url() == "/favicon.svg" {
+            "image/svg+xml"
+        } else {
+            "text/html; charset=utf-8"
+        };
         let mut response = Response::from_string(body).with_status_code(code);
         for (name, value) in [
-            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Type", content_type),
             ("Cache-Control", "no-store"),
             (
                 "Content-Security-Policy",
-                "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+                "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
             ),
             ("X-Content-Type-Options", "nosniff"),
         ] {

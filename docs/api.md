@@ -2,11 +2,13 @@
 
 Rootstock exposes local MCP tools and a local HTML console. Application APIs hosted through
 Traefik belong to their applications and are not Rootstock endpoints.
+The [Leptos example](../examples/leptos/README.md#configuration-and-http-reference) documents its
+own page and health routes.
 
 | Interface | Operations | Access |
 | --- | --- | --- |
 | MCP stdio | `list_apps`, `get_status`, `check_routes`, `plan_deploy` | Client-launched `rootstock-mcp` process |
-| Console HTTP | `GET /`, optionally with `inspect` | Loopback listener started by `rootstock observe` |
+| Console HTTP | `GET /`, optionally with `inspect`; `GET /favicon.svg` | Loopback listener started by `rootstock observe` |
 
 Use [MCP setup](mcp.md) for client configuration and [console configuration](configuration.md#live-status-and-local-dashboard)
 for port and refresh settings. The [OpenAPI document](http.openapi.yaml) describes the HTTP route.
@@ -229,6 +231,7 @@ Example snapshot:
       "uptime_seconds": 120,
       "restart_count": 0,
       "domains": ["app.example.com"],
+      "links": ["https://app.example.com/"],
       "routing_error": null,
       "ports": [{"internal": "3000/tcp", "published": []}],
       "memory": "4MiB / 1GiB",
@@ -253,6 +256,7 @@ Example snapshot:
 | `services[].uptime_seconds` | nonnegative integer or `null` | Current running-container uptime; `null` when not running |
 | `services[].restart_count` | nonnegative integer | Restart count for the current container |
 | `services[].domains` | string array | Hostnames from live Traefik labels |
+| `services[].links` | string array | Sorted, unique HTTP/HTTPS browser URLs inferred from running-container metadata; empty when no usable web address can be inferred |
 | `services[].routing_error` | string or `null` | Per-container routing parse error; the rest of the snapshot remains available |
 | `services[].ports` | array | Ports declared by Docker or Traefik metadata |
 | `ports[].internal` | string | Container port/protocol, such as `3000/tcp` |
@@ -264,6 +268,37 @@ Example snapshot:
 formatted strings, not byte counts. Stopped containers have unavailable resource samples. Limits
 are not reserved memory; container memory does not account for the whole VM. Domains and port
 metadata do not establish public reachability or prove that a process is listening.
+
+### Browser links
+
+The collector derives `links` once for the console, JSON output, and MCP. The console opens them
+in a new tab from deployment summaries and container details. It performs no DNS lookups or HTTP
+probes and does not create host-file entries, DNS records, or tunnels.
+
+For a local Docker engine, published TCP ports become links when they are HTTP/HTTPS ports
+80/443 or are identified by Traefik's `loadbalancer.server.port` and optional
+`loadbalancer.server.scheme` labels. Unspecified binding addresses become `localhost`; explicit
+addresses are retained, including bracketed IPv6. Other ports are left as port metadata. A proxy's
+generic listener is not presented as an application link.
+
+Routed URLs use explicit Host matchers. Router TLS settings determine HTTPS; without TLS settings,
+the declared URL uses HTTP. When a running Traefik proxy shares the app's Docker network, its
+static command-line entrypoint settings and published ports supply the browser port and any
+entrypoint TLS default. Localhost routes require such an observed proxy mapping. Public hostnames
+fall back to standard HTTP/HTTPS ports when a mapping cannot be inferred. URLs describe the site
+root; path matchers and middleware rewrites are not translated into application paths.
+
+Direct published-port links require a local Docker endpoint: a Unix socket, Windows named pipe,
+or loopback TCP/HTTP endpoint. Selection follows Docker's `DOCKER_CONTEXT` precedence over
+`DOCKER_HOST`; otherwise the collector reads the selected context's endpoint. If that optional
+context metadata cannot be read, direct links are omitted while status collection continues.
+Remote engines do not produce links for client loopback bindings or localhost hostnames. Stopped
+containers have no links. Invalid URL hostnames and non-HTTP backend schemes are omitted.
+
+These are derived addresses, not availability checks. Public domain links still require DNS and
+network access from the browser, and proxy filtering, certificates, and application readiness may
+affect whether a URL works. Proxy settings supplied only through configuration files cannot be
+inspected by this inference.
 
 ## Console HTTP
 
@@ -283,7 +318,7 @@ curl http://127.0.0.1:8787/
 curl 'http://127.0.0.1:8787/?inspect=0'
 ```
 
-Only `/` and `/?inspect=<unsigned-index>` are accepted. Other query parameters, duplicate
+The overview accepts only `/` and `/?inspect=<unsigned-index>`. Other query parameters, duplicate
 parameters, and invalid index syntax return 404. An out-of-range numeric index renders the
 overview with all details closed. Indices describe snapshot order, not persistent identifiers.
 Each request collects fresh data. Automatic refresh retains the current URL and selected index.
@@ -302,3 +337,22 @@ Content Security Policy. No CORS access is advertised. Assets are embedded; no e
 requests or browser JavaScript are needed. HTTP authentication is not implemented; access is
 restricted by the loopback listener and Host check. Reads use the operator's configured Docker/SSH
 credentials. The console adds no public proxy route.
+
+### `GET /favicon.svg`
+
+Returns the same embedded SVG used for the console's header logo. It requires the same loopback
+Host header as the overview. No query parameters are accepted.
+
+| Status | Content type | Meaning |
+| --- | --- | --- |
+| `200` | `image/svg+xml` | Shared logo artwork |
+| `400` | `text/html; charset=utf-8` | Unexpected Host header |
+| `404` | `text/html; charset=utf-8` | Unsupported query syntax |
+| `405` | `text/html; charset=utf-8` | Method is not GET, including HEAD |
+
+The route uses the console's cache, content-security, and content-type protection headers. It
+does not read inventory or query Docker, so it remains available when the overview returns 503.
+
+```sh
+curl --fail http://127.0.0.1:8787/favicon.svg
+```

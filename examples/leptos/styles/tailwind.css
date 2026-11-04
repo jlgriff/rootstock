@@ -1,0 +1,10 @@
+@import "tailwindcss" source(none);
+@source "../src/lib.rs";
+
+@theme {
+  --color-paper: #f6f4ee;
+  --color-ink: #252d26;
+  --color-muted: #6c746a;
+  --color-line: #dcded4;
+  --color-accent: #b45432;
+}

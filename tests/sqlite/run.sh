@@ -7,7 +7,7 @@ name="sqlite-test-$$"
 project="rootstock-$name"
 app="$work/apps/$name"
 mkdir -p "$work/apps"
-cp -R examples/sqlite-litestream "$app"
+cp -R templates/sqlite-litestream "$app"
 export APP_IMAGE=rootstock-sqlite-app:test
 export APP_DOMAIN=sqlite.example.test
 export SQLITE_BACKUP_IMAGE=rootstock-sqlite-backup:test
@@ -73,7 +73,7 @@ networks:
     name: $project-proxy
 CONF
 
-docker build --provenance=false -q -t "$SQLITE_BACKUP_IMAGE" examples/sqlite-litestream >/dev/null
+docker build --provenance=false -q -t "$SQLITE_BACKUP_IMAGE" templates/sqlite-litestream >/dev/null
 docker build --provenance=false -q -t "$APP_IMAGE" -f tests/sqlite/Dockerfile . >/dev/null
 docker network create "$project-proxy" >/dev/null
 compose up -d --wait object-store

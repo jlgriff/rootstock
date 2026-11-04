@@ -1,6 +1,6 @@
 # SQLite + Litestream
 
-Use `examples/sqlite-litestream/` for an application that keeps SQLite on local disk and replicates
+Use `templates/sqlite-litestream/` for an application that keeps SQLite on local disk and replicates
 it to off-host object storage. Each application gets its own database volume and one Litestream
 process. Rootstock's CLI remains unaware of database schemas.
 
@@ -12,10 +12,10 @@ belong in this image. The build context allowlist excludes other files.
 
 ```sh
 docker build --platform linux/amd64 \
-  -t registry.example.com/team/sqlite-backup:release examples/sqlite-litestream
+  -t registry.example.com/team/sqlite-backup:release templates/sqlite-litestream
 docker push registry.example.com/team/sqlite-backup:release
 mkdir -p apps
-cp -R examples/sqlite-litestream apps/web
+cp -R templates/sqlite-litestream apps/web
 cp apps/web/.env.example apps/web/.env
 ```
 
