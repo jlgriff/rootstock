@@ -217,6 +217,15 @@ Example snapshot:
 ```json
 {
   "captured_at": "2026-01-01T12:00:00Z",
+  "host_memory": {
+    "total_bytes": 1073741824,
+    "used_bytes": 402653184,
+    "available_bytes": 671088640,
+    "cache_and_buffers_bytes": 301989888,
+    "swap_total_bytes": 2147483648,
+    "swap_used_bytes": 67108864
+  },
+  "host_memory_error": null,
   "apps": [{
     "name": "web",
     "project": "rootstock-web",
@@ -244,6 +253,14 @@ Example snapshot:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `captured_at` | string | UTC RFC 3339 timestamp after collection; individual Docker reads are not atomic |
+| `host_memory` | object or `null` | Whole Linux host memory, collected independently of app filtering; `null` when unsupported or unavailable |
+| `host_memory_error` | string or `null` | Reason host memory could not be read; container status remains usable |
+| `host_memory.total_bytes` | nonnegative integer | Linux `MemTotal` converted from KiB to bytes |
+| `host_memory.used_bytes` | nonnegative integer | `MemTotal - MemAvailable`, in bytes; includes host overhead |
+| `host_memory.available_bytes` | nonnegative integer | Kernel estimate of memory available without swapping, including reclaimable cache |
+| `host_memory.cache_and_buffers_bytes` | nonnegative integer | `Cached + Buffers + SReclaimable`, in bytes; overlaps used and available memory |
+| `host_memory.swap_total_bytes` | nonnegative integer | Total configured swap, in bytes |
+| `host_memory.swap_used_bytes` | nonnegative integer | `SwapTotal - SwapFree`, in bytes |
 | `apps` | array | Deployments ordered by project; empty when none are found |
 | `apps[].name`, `project` | string | App name and full Compose project identifier |
 | `apps[].configured` | boolean | Whether the project has a local inventory folder |
@@ -264,10 +281,15 @@ Example snapshot:
 | `services[].memory` | string or `null` | Docker-formatted memory usage and limit; `null` when unavailable |
 | `services[].cpu` | string or `null` | Docker-formatted CPU percentage; `null` when unavailable |
 
-`services[]` is nested under each `apps[]`; `ports[]` is nested under each service. Metrics are
-formatted strings, not byte counts. Stopped containers have unavailable resource samples. Limits
+`services[]` is nested under each `apps[]`; `ports[]` is nested under each service. Container metrics
+are formatted strings; host memory counters are byte counts. Stopped containers have unavailable resource samples. Limits
 are not reserved memory; container memory does not account for the whole VM. Domains and port
 metadata do not establish public reachability or prove that a process is listening.
+
+Host counters use the same collector in the CLI, HTML console, and MCP. They are read over SSH or
+directly for a native Linux engine; unsupported transports leave them unavailable. See the
+[host memory collection reference](configuration.md#live-status-and-local-dashboard) for access
+requirements and accounting details. Do not add host, container, and cache figures together.
 
 ### Browser links
 

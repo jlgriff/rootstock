@@ -284,6 +284,7 @@ a matching name adopts them. Stack files are ignored even when their secrets are
 | `rootstock:acmeEmail` | Yes | ACME account contact email for hosted domains |
 | `do:region` | DigitalOcean: yes | Region slug |
 | `do:dropletSize` | DigitalOcean: yes | Droplet size slug; example sizing is not a measured capacity guarantee |
+| `do:image` | No | OS image slug or ID for new DigitalOcean hosts; defaults to `ubuntu-24-04-x64`; `debian-13-x64` is also supported; ignored for existing hosts |
 | `do:dropletName` | DigitalOcean: unless `hostName` is set | Existing resource name, retained for compatibility |
 | `do:projectId` | No | Existing DigitalOcean project UUID for this stack's Droplet and reserved IP; unset uses the account's default project placement |
 | `do:sshKeyFingerprints` | DigitalOcean: yes | Comma-separated uploaded key fingerprints; surrounding whitespace is trimmed |
@@ -292,8 +293,9 @@ a matching name adopts them. Stack files are ignored even when their secrets are
 | `ec2:keyName` | AWS: yes | Existing EC2 key-pair name in the selected region |
 | `ec2:rootVolumeSize` | No | AWS encrypted gp3 root disk size in GiB; defaults to `20` |
 
-Both adapters provision Ubuntu 24.04 x86-64, run the same Docker bootstrap with a 2 GB swap file,
-and install the same proxy in `/srv/rootstock/proxy`. Bootstrap uses sudo, an SSH dial error limit
+Both adapters default to Ubuntu 24.04 x86-64. DigitalOcean also supports Debian through `do:image`.
+They run the same Docker bootstrap with a 2 GB swap file and install the same proxy in
+`/srv/rootstock/proxy`. Bootstrap uses sudo, an SSH dial error limit
 of 30, and adds the SSH user to the Docker group; subsequent release commands use that account
 without sudo. Cloud-init, image, and uploaded-key changes do not replace an existing VM; update
 the OS separately. Proxy Compose changes do trigger a fresh `compose up`.
@@ -434,6 +436,24 @@ limit is the container's limit or the Docker host's memory when unrestricted. It
 memory. Stopped containers and missing samples have unavailable metrics rather than zero.
 Container memory does not include all host overhead.
 
+Host memory comes from Linux `/proc/meminfo`, read over the selected Docker endpoint's SSH
+connection or directly for a native Linux engine using a Unix socket. SSH uses your existing
+keys and configuration, noninteractive authentication, and a five-second connection timeout.
+The host must permit `cat /proc/meminfo` in addition to Docker socket access. No sudo, agent,
+helper container, or extra VM service is required. SSH URIs with a custom Docker socket path are
+unsupported for host counters. Other transports, including local Docker Desktop or OrbStack on
+macOS and remote TCP engines, show host memory as unavailable; they never substitute macOS RAM.
+Use direct reads only when the client and Docker daemon share the same Linux host.
+
+Host used memory is `MemTotal - MemAvailable`, matching the kernel's estimate of RAM unavailable
+without swapping. Available memory includes reclaimable cache. Cache and buffers are
+`Cached + Buffers + SReclaimable`; this overlaps the used and available figures and must not be
+added to them. Swap usage is `SwapTotal - SwapFree`. These host values include all workloads,
+Docker, the OS, and kernel overhead, while container totals cover only discovered Rootstock
+containers. Host and container memory are overlapping measurements, not additive categories.
+Missing counters or a failed host read leave container status available and expose
+`host_memory_error` in JSON and MCP. The console marks host memory unavailable instead of showing zero.
+
 `observe` prints `http://127.0.0.1:<port>/` and stays running on the client until Ctrl-C. Open that
 URL locally. It binds only to IPv4 loopback, accepts localhost/loopback Host headers, and adds no
 public route or browser password gate to deployed apps. Each page load collects a fresh snapshot;
@@ -444,8 +464,9 @@ No previous snapshot is presented as current after a failed collection.
 The page uses compiled Tailwind CSS and server-rendered HTML, with no JavaScript, external assets, database,
 or metrics history. Responses disable browser caching. Only selected status fields reach the page
 or JSON output; container environments, complete labels, mounts, and credentials are excluded.
-The collector issues read-only `ps`, `inspect`, `stats`, and local `context inspect` calls. It performs no app lifecycle
-actions. No dashboard container, agent, Rust runtime, or extra port is installed on the serving VM;
+The collector issues read-only `ps`, `inspect`, `stats`, and local `context inspect` calls,
+plus a host memory read where supported. It performs no app lifecycle actions.
+No dashboard container, agent, Rust runtime, or extra port is installed on the serving VM;
 active queries briefly use its existing Docker/SSH infrastructure.
 
 ### Styling the console

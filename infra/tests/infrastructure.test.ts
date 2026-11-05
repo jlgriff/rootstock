@@ -12,6 +12,7 @@ interface StackResult {
 
 interface StackOptions {
   projectId?: string;
+  image?: string;
   sshAgent?: boolean;
   agentSocket?: string;
 }
@@ -26,6 +27,7 @@ function runStack(cloud: string, options: StackOptions = {}) {
     "rootstock:acmeEmail": "admin@example.com",
     "rootstock:sshCidr": "203.0.113.0/24",
     ...(options.projectId ? { "do:projectId": options.projectId } : {}),
+    ...(options.image ? { "do:image": options.image } : {}),
     ...(options.sshAgent ? { "rootstock:sshAgent": "true" } : {}),
     ...(cloud === "aws" ? {
       "aws:region": "us-east-1",
@@ -75,6 +77,15 @@ test("AWS provisions a host with the shared deployment contract", () => {
 /** Keeps DigitalOcean releases independent of AWS configuration. */
 test("DigitalOcean provisions a host with the shared deployment contract", () => {
   verifyHost("digitalocean", "digitalocean:index/droplet:Droplet");
+});
+
+/** Allows a leaner operating system without changing the application deployment contract. */
+test("DigitalOcean uses the configured operating system image", () => {
+  const result = runStack("digitalocean", { image: "debian-13-x64" });
+  assert.equal(result.status, 0, result.stderr);
+  const stack: StackResult = JSON.parse(result.stdout);
+  const host = stack.resources.find(resource => resource.type === "digitalocean:index/droplet:Droplet");
+  assert.equal(host?.inputs.image, "debian-13-x64");
 });
 
 /** Keeps new host resources in the selected project without managing the project itself. */

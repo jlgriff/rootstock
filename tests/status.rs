@@ -53,11 +53,18 @@ esac
 "#,
         )
         .unwrap();
-        fs::set_permissions(
-            directory.path().join("docker"),
-            fs::Permissions::from_mode(0o755),
+        fs::write(
+            directory.path().join("ssh"),
+            "#!/bin/sh\necho 'Host memory unavailable in this fixture' >&2\nexit 1\n",
         )
         .unwrap();
+        for program in ["docker", "ssh"] {
+            fs::set_permissions(
+                directory.path().join(program),
+                fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
         Self { directory }
     }
 
@@ -76,7 +83,20 @@ esac
             .env("FIXTURE_DIRECTORY", self.directory.path())
             .arg("--apps")
             .arg(self.directory.path().join("apps"));
+        if self.directory.path().join("meminfo").exists() {
+            command.env("DOCKER_HOST", "ssh://operator@host.example.test:2222");
+        }
         command
+    }
+
+    /// Supplies host counters over a synthetic SSH connection without accessing a real host.
+    fn host_memory(&self, contents: &str) {
+        fs::write(self.directory.path().join("meminfo"), contents).unwrap();
+        fs::write(
+            self.directory.path().join("ssh"),
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FIXTURE_DIRECTORY/ssh-args\"\ncat \"$FIXTURE_DIRECTORY/meminfo\"\n",
+        )
+        .unwrap();
     }
 
     /// Keeps synthetic discovery aligned with the inspected container set.
@@ -149,6 +169,99 @@ impl Drop for Server {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+const MEMINFO: &str = "MemTotal: 1048576 kB\nMemFree: 131072 kB\nMemAvailable: 655360 kB\nBuffers: 16384 kB\nCached: 262144 kB\nSReclaimable: 16384 kB\nSwapTotal: 2097152 kB\nSwapFree: 2031616 kB\n";
+
+/// Separates host capacity from container usage and follows Docker context precedence.
+#[test]
+fn host_memory_uses_available_ram_on_the_selected_ssh_host() {
+    let fixture = Fixture::new();
+    fixture.host_memory(MEMINFO);
+    let output = fixture
+        .command()
+        .env("DOCKER_CONTEXT", "remote")
+        .env("DOCKER_HOST", "unix:///ignored/docker.sock")
+        .env(
+            "FIXTURE_DOCKER_ENDPOINT",
+            "ssh://operator@host.example.test:2222",
+        )
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let memory = &snapshot["host_memory"];
+    assert_eq!(memory["total_bytes"], 1024_u64.pow(3));
+    assert_eq!(memory["used_bytes"], 384 * 1024_u64.pow(2));
+    assert_eq!(memory["available_bytes"], 640 * 1024_u64.pow(2));
+    assert_eq!(memory["cache_and_buffers_bytes"], 288 * 1024_u64.pow(2));
+    assert_eq!(memory["swap_total_bytes"], 2 * 1024_u64.pow(3));
+    assert_eq!(memory["swap_used_bytes"], 64 * 1024_u64.pow(2));
+    assert!(snapshot["host_memory_error"].is_null());
+    let arguments = fs::read_to_string(fixture.directory.path().join("ssh-args")).unwrap();
+    assert_eq!(
+        arguments.lines().collect::<Vec<_>>(),
+        [
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "--",
+            "ssh://operator@host.example.test:2222",
+            "cat /proc/meminfo",
+        ]
+    );
+}
+
+/// Makes host memory, cache, and swap visible without relabelling container totals.
+#[test]
+fn dashboard_shows_host_memory_separately_from_container_memory() {
+    let fixture = Fixture::new();
+    fixture.host_memory(MEMINFO);
+    let page = fixture.page("/");
+    for expected in [
+        "Host memory",
+        "384.0 MiB",
+        "640.0 MiB",
+        "Cache and buffers",
+        "288.0 MiB",
+        "Swap",
+        "64.0 MiB",
+        "Container memory",
+        "4.0 MiB",
+    ] {
+        assert!(page.contains(expected), "missing {expected}");
+    }
+}
+
+/// Preserves container visibility when host counters are missing or invalid.
+#[test]
+fn invalid_host_memory_is_unavailable_without_hiding_containers() {
+    let fixture = Fixture::new();
+    fixture.host_memory("MemTotal: 1048576 kB\n");
+    let output = fixture
+        .command()
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(snapshot["host_memory"].is_null());
+    assert!(
+        snapshot["host_memory_error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("MemAvailable")
+    );
+    assert_eq!(snapshot["apps"][0]["services"][0]["memory"], "4MiB / 1GiB");
+    let page = fixture.page("/");
+    assert!(page.contains("Host memory unavailable"));
+    assert!(page.contains("Container memory"));
 }
 
 /// Proves the live service contract preserves ports and excludes secrets and stopped metrics.

@@ -21,7 +21,7 @@ export function createHost(config: InfraConfig): Host {
 function createDigitalOceanHost(config: Extract<InfraConfig, { cloud: "digitalocean" }>): Host {
   const droplet = new digitalocean.Droplet(config.name, {
     name: config.name, region: config.region, size: config.size,
-    image: "ubuntu-24-04-x64", userData, sshKeys: config.sshKeyFingerprints,
+    image: config.image, userData, sshKeys: config.sshKeyFingerprints,
   }, { ignoreChanges: ["image", "userData", "sshKeys"] });
   const address = new digitalocean.ReservedIp(`${config.name}-ip`, {
     dropletId: droplet.id.apply(Number), region: config.region,

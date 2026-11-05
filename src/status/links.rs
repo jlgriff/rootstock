@@ -1,39 +1,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 
-use super::{Container, docker};
+use super::Container;
 use crate::routes;
 
-/// Determines whether published bindings refer to the browser's machine using Docker's precedence.
-pub(super) fn local_engine() -> bool {
-    let endpoint = if std::env::var("DOCKER_CONTEXT")
-        .unwrap_or_default()
-        .is_empty()
-        && let Ok(host) = std::env::var("DOCKER_HOST")
-        && !host.is_empty()
-    {
-        Some(host)
-    } else {
-        docker(&[
-            "context",
-            "inspect",
-            "--format",
-            "{{json .Endpoints.docker.Host}}",
-        ])
-        .ok()
-        .and_then(|output| serde_json::from_slice::<String>(&output).ok())
-    };
-    endpoint.is_some_and(|endpoint| {
-        endpoint.starts_with("unix://")
-            || endpoint.starts_with("npipe://")
-            || ["tcp://", "http://", "https://"].iter().any(|scheme| {
-                endpoint.strip_prefix(scheme).is_some_and(|address| {
-                    ["localhost:", "127.0.0.1:", "[::1]:"]
-                        .iter()
-                        .any(|host| address.starts_with(host))
-                })
+/// Determines whether published bindings refer to the browser's machine.
+pub(super) fn local_engine(endpoint: &str) -> bool {
+    endpoint.starts_with("unix://")
+        || endpoint.starts_with("npipe://")
+        || ["tcp://", "http://", "https://"].iter().any(|scheme| {
+            endpoint.strip_prefix(scheme).is_some_and(|address| {
+                ["localhost:", "127.0.0.1:", "[::1]:"]
+                    .iter()
+                    .any(|host| address.starts_with(host))
             })
-    })
+        })
 }
 
 /// Reads a static Traefik command setting without interpreting shell syntax.

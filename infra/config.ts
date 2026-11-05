@@ -11,7 +11,7 @@ interface SharedConfig {
 }
 
 export type InfraConfig = SharedConfig & (
-  | { cloud: "digitalocean"; region: string; size: string; sshKeyFingerprints: string[]; projectId?: string }
+  | { cloud: "digitalocean"; region: string; size: string; image: string; sshKeyFingerprints: string[]; projectId?: string }
   | { cloud: "aws"; instanceType: string; keyName: string; rootVolumeSize: number }
 );
 
@@ -26,6 +26,7 @@ export function getInfraConfig(): InfraConfig {
       name: config.get("hostName") ?? settings.require("dropletName"),
       region: settings.require("region"),
       size: settings.require("dropletSize"),
+      image: settings.get("image") ?? "ubuntu-24-04-x64",
       sshKeyFingerprints: settings.require("sshKeyFingerprints").split(",").map(value => value.trim()),
       projectId: settings.get("projectId"),
     };

@@ -16,6 +16,9 @@ paths:
         is supported, once, as an unsigned decimal index. Other query syntax returns 404.
         An out-of-range numeric index renders the overview with all details closed.
         Other HTTP methods return 405; unknown paths return 404.
+        Shows host memory, available RAM, cache, and swap where supported, separately
+        from container totals. A failed host memory read leaves the overview available
+        with an unavailable indicator; it does not produce 503 on its own.
       parameters:
         - name: inspect
           in: query

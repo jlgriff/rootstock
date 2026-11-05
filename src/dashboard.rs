@@ -269,6 +269,52 @@ fn service_details(app: &AppStatus, index: usize, open: bool) -> String {
     content
 }
 
+/// Separates whole-host capacity and cache from the running-container totals.
+fn host_memory(snapshot: &Snapshot) -> String {
+    let Some(memory) = &snapshot.host_memory else {
+        return format!(
+            r#"<section class="mt-6 rounded-xl border border-slate-200 bg-white p-5"><h2 class="text-sm font-semibold">Host memory unavailable</h2><p class="mt-2 text-xs text-muted">{}</p></section>"#,
+            escape(
+                snapshot
+                    .host_memory_error
+                    .as_deref()
+                    .unwrap_or("No host memory sample")
+            )
+        );
+    };
+    let label = |bytes| memory_label(Some(bytes as f64));
+    let metrics = [
+        (
+            "Used / total",
+            format!(
+                "{} / {}",
+                label(memory.used_bytes),
+                label(memory.total_bytes)
+            ),
+        ),
+        ("Available", label(memory.available_bytes)),
+        ("Cache and buffers", label(memory.cache_and_buffers_bytes)),
+        (
+            "Swap used / total",
+            format!(
+                "{} / {}",
+                label(memory.swap_used_bytes),
+                label(memory.swap_total_bytes)
+            ),
+        ),
+    ];
+    let mut content = String::from(
+        r#"<section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 lg:p-6" aria-labelledby="host-memory-heading"><h2 id="host-memory-heading" class="text-sm font-semibold">Host memory</h2><p class="mt-2 text-xs text-muted">Whole host, including containers, Docker, and the operating system.</p><dl class="mt-5 grid grid-cols-2 gap-5 lg:grid-cols-4">"#,
+    );
+    for (name, value) in metrics {
+        content.push_str(&format!(
+            r#"<div class="min-w-0"><dt class="text-xs font-medium text-muted">{name}</dt><dd class="mt-2 text-base font-semibold tabular-nums">{value}</dd></div>"#,
+        ));
+    }
+    content.push_str(r#"</dl><p class="mt-5 text-xs leading-relaxed text-muted">Used is total minus available. Cache overlaps these figures; it is not additional usage.</p></section>"#);
+    content
+}
+
 /// Presents deployment health first and preserves expanded inspection across automatic refreshes.
 fn render(snapshot: &Snapshot, refresh: u64, inspect: Option<usize>) -> String {
     let total: usize = snapshot.apps.iter().map(|app| app.services.len()).sum();
@@ -296,6 +342,7 @@ fn render(snapshot: &Snapshot, refresh: u64, inspect: Option<usize>) -> String {
         snapshot.apps.len(),
         memory_label(memory)
     );
+    content.push_str(&host_memory(snapshot));
     if attention > 0 {
         let noun = if attention == 1 {
             "deployment"

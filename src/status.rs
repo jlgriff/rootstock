@@ -9,12 +9,26 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use crate::{inventory, routes};
 
 mod links;
+mod memory;
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
 pub struct Snapshot {
     pub captured_at: String,
+    pub host_memory: Option<HostMemory>,
+    pub host_memory_error: Option<String>,
     pub apps: Vec<AppStatus>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
+pub struct HostMemory {
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+    pub available_bytes: u64,
+    pub cache_and_buffers_bytes: u64,
+    pub swap_total_bytes: u64,
+    pub swap_used_bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,6 +187,25 @@ fn docker(args: &[&str]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
+/// Resolves the engine address using Docker's context-over-environment precedence.
+fn endpoint() -> Result<String> {
+    if std::env::var("DOCKER_CONTEXT")
+        .unwrap_or_default()
+        .is_empty()
+        && let Ok(host) = std::env::var("DOCKER_HOST")
+        && !host.is_empty()
+    {
+        return Ok(host);
+    }
+    serde_json::from_slice(&docker(&[
+        "context",
+        "inspect",
+        "--format",
+        "{{json .Endpoints.docker.Host}}",
+    ])?)
+    .context("reading Docker endpoint")
+}
+
 /// Combines live Compose containers with optional local registration without resolving app secrets.
 pub fn collect(root: &Path) -> Result<Snapshot> {
     let mut apps = BTreeMap::new();
@@ -189,6 +222,7 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
             );
         }
     }
+    let endpoint = endpoint();
     let listing = String::from_utf8(docker(&[
         "ps",
         "--all",
@@ -233,7 +267,7 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
                 stats.insert(sample.id.clone(), sample);
             }
         }
-        let local = links::local_engine();
+        let local = endpoint.as_deref().is_ok_and(links::local_engine);
         let urls: Vec<_> = containers
             .iter()
             .map(|container| links::derive(container, &containers, local))
@@ -263,8 +297,14 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
         app.services
             .sort_by(|a, b| (&a.service, &a.container).cmp(&(&b.service, &b.container)));
     }
+    let (host_memory, host_memory_error) = match endpoint.and_then(|host| memory::collect(&host)) {
+        Ok(memory) => (Some(memory), None),
+        Err(error) => (None, Some(format!("{error:#}"))),
+    };
     Ok(Snapshot {
         captured_at: OffsetDateTime::now_utc().format(&Rfc3339)?,
+        host_memory,
+        host_memory_error,
         apps: apps.into_values().collect(),
     })
 }
@@ -432,6 +472,17 @@ pub fn table(snapshot: &Snapshot) -> String {
     output.push('\n');
     if snapshot.apps.is_empty() {
         output.push_str("No rootstock applications found.\n");
+    }
+    if let Some(memory) = &snapshot.host_memory {
+        let mib = 1024_f64.powi(2);
+        output.push_str(&format!(
+            "\nHost memory: {:.1} / {:.1} MiB used; {:.1} MiB available; {:.1} MiB cache and buffers\nSwap: {:.1} / {:.1} MiB used\n",
+            memory.used_bytes as f64 / mib, memory.total_bytes as f64 / mib,
+            memory.available_bytes as f64 / mib, memory.cache_and_buffers_bytes as f64 / mib,
+            memory.swap_used_bytes as f64 / mib, memory.swap_total_bytes as f64 / mib,
+        ));
+    } else if let Some(error) = &snapshot.host_memory_error {
+        output.push_str(&format!("\nHost memory unavailable: {error}\n"));
     }
     output
 }
