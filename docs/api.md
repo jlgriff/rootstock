@@ -118,7 +118,7 @@ an empty `services` array. Live `rootstock-` projects absent from local registra
 
 | Argument | Type | Required? | Meaning |
 | --- | --- | --- | --- |
-| `name` | string or `null` | No | Exact app name; omit or use `null` for every deployment |
+| `name` | string or `null` | No | Exact app identifier, independent of display name; omit or use `null` for every deployment |
 
 ```json
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_status","arguments":{"name":"web"}}}
@@ -228,6 +228,7 @@ Example snapshot:
   "host_memory_error": null,
   "apps": [{
     "name": "web",
+    "display_name": "Public website",
     "project": "rootstock-web",
     "configured": true,
     "services": [{
@@ -262,7 +263,8 @@ Example snapshot:
 | `host_memory.swap_total_bytes` | nonnegative integer | Total configured swap, in bytes |
 | `host_memory.swap_used_bytes` | nonnegative integer | `SwapTotal - SwapFree`, in bytes |
 | `apps` | array | Deployments ordered by project; empty when none are found |
-| `apps[].name`, `project` | string | App name and full Compose project identifier |
+| `apps[].name`, `project` | string | Stable app name and full Compose project identifier; display configuration does not change them |
+| `apps[].display_name` | string | Configured human-readable name, falling back to `name`; shared by browser, CLI table, and MCP snapshots |
 | `apps[].configured` | boolean | Whether the project has a local inventory folder |
 | `apps[].services` | array | Containers ordered by service and container name |
 | `services[].service`, `container` | string | Compose service and Docker container name |

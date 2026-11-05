@@ -62,6 +62,39 @@ to loopback. `observe --public-host <hostname>` enables the hosted listener and 
 hostname, optionally with `:443`, plus loopback healthcheck requests. Deploy this mode behind
 an authenticated proxy; the Rust HTTP server itself does not authenticate requests.
 
+## Display names
+
+The dashboard uses the same [display-name configuration](configuration.md#display-names) as
+CLI and MCP status. Create a directory on the Docker host, such as
+`/srv/rootstock/dashboard/names`, containing only `rootstock.toml`:
+
+```toml
+[names]
+rootstock-web = "Public website"
+rootstock-proxy = "Shared proxy"
+```
+
+Keep the directory and file readable by the dashboard's user (UID 1000). They contain display
+metadata, not credentials. Add this ignored `apps/dashboard/compose.override.yml`:
+
+```yaml
+services:
+  dashboard:
+    volumes:
+      - type: bind
+        source: ${DASHBOARD_NAMES_DIR:?set DASHBOARD_NAMES_DIR to the names directory on the Docker host}
+        target: /apps
+        read_only: true
+        bind:
+          create_host_path: false
+```
+
+Set `DASHBOARD_NAMES_DIR` in the ignored dashboard `.env` to the absolute directory on the
+Docker host, then deploy the dashboard. Compose automatically loads this override alongside
+`compose.yml`. Mount only the names directory, not your deployment inventory or environment files.
+After the mount is established, edits to its `rootstock.toml` appear on the next browser refresh.
+The application containers and their existing Compose project names stay the same.
+
 ## Inspect and maintain
 
 The dashboard discovers Rootstock containers directly; it does not mount your application

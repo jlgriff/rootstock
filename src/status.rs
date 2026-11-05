@@ -35,6 +35,7 @@ pub struct HostMemory {
 #[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
 pub struct AppStatus {
     pub name: String,
+    pub display_name: String,
     pub project: String,
     pub configured: bool,
     pub services: Vec<ServiceStatus>,
@@ -208,12 +209,14 @@ fn endpoint() -> Result<String> {
 
 /// Combines live Compose containers with optional local registration without resolving app secrets.
 pub fn collect(root: &Path) -> Result<Snapshot> {
+    let names = inventory::display_names(root)?;
     let mut apps = BTreeMap::new();
     if root.try_exists()? {
         for app in inventory::discover(root)? {
             apps.insert(
                 app.project.clone(),
                 AppStatus {
+                    display_name: app.name.clone(),
                     name: app.name,
                     project: app.project,
                     configured: true,
@@ -289,6 +292,7 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
                 memory_proxy.get_or_insert_with(|| container.id.clone());
             }
             let app = apps.entry(project.clone()).or_insert_with(|| AppStatus {
+                display_name: String::new(),
                 name: project
                     .strip_prefix(inventory::PROJECT_PREFIX)
                     .unwrap()
@@ -302,6 +306,7 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
         }
     }
     for app in apps.values_mut() {
+        app.display_name = names.get(&app.project).unwrap_or(&app.name).clone();
         app.services
             .sort_by(|a, b| (&a.service, &a.container).cmp(&(&b.service, &b.container)));
     }
@@ -426,14 +431,14 @@ pub fn table(snapshot: &Snapshot) -> String {
     for app in &snapshot.apps {
         if app.services.is_empty() {
             rows.push(vec![
-                app.name.clone(),
+                app.display_name.clone(),
                 "-".to_string(),
                 "not deployed".to_string(),
             ]);
         }
         for service in &app.services {
             rows.push(vec![
-                app.name.clone(),
+                app.display_name.clone(),
                 service.service.clone(),
                 format!(
                     "{} / {}",

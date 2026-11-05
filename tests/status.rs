@@ -183,6 +183,61 @@ impl Drop for Server {
 
 const MEMINFO: &str = "MemTotal: 1048576 kB\nMemFree: 131072 kB\nMemAvailable: 655360 kB\nBuffers: 16384 kB\nCached: 262144 kB\nSReclaimable: 16384 kB\nSwapTotal: 2097152 kB\nSwapFree: 2031616 kB\n";
 
+/// Renames live deployments without changing their identity or requiring local app definitions.
+#[test]
+fn display_names_are_configuration_without_deployment_migration() {
+    for configured in [true, false] {
+        let fixture = Fixture::new();
+        if !configured {
+            fs::remove_dir_all(fixture.directory.path().join("apps/web")).unwrap();
+        }
+        let settings = fixture.directory.path().join("apps/rootstock.toml");
+        for name in ["Public <Web>", "Main page"] {
+            fs::write(
+                &settings,
+                format!("[names]\nrootstock-web = {name:?}\nrootstock-absent = \"Absent\"\n"),
+            )
+            .unwrap();
+            let output = fixture
+                .command()
+                .args(["status", "--json"])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(snapshot["apps"].as_array().unwrap().len(), 1);
+            let app = &snapshot["apps"][0];
+            assert_eq!(app["display_name"], name);
+            assert_eq!(app["name"], "web");
+            assert_eq!(app["project"], "rootstock-web");
+            assert_eq!(app["configured"], configured);
+            assert_eq!(app["services"].as_array().unwrap().len(), 2);
+            let page = fixture.page("/");
+            assert!(page.starts_with("HTTP/1.1 200"), "{page}");
+            assert!(page.contains(&name.replace('<', "&lt;").replace('>', "&gt;")));
+            assert!(page.contains("rootstock-web"));
+            assert!(!page.contains("Public <Web>"));
+            let table = fixture.command().arg("status").output().unwrap();
+            assert!(table.status.success());
+            assert!(String::from_utf8_lossy(&table.stdout).contains(name));
+        }
+    }
+}
+
+/// Makes malformed display settings actionable instead of silently showing an inferred name.
+#[test]
+fn invalid_display_names_report_the_configuration_file() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.directory.path().join("apps/rootstock.toml"),
+        "names = [",
+    )
+    .unwrap();
+    let output = fixture.command().arg("status").output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("apps/rootstock.toml"));
+}
+
 /// Reads desktop VM counters from infrastructure without executing inside an application.
 #[test]
 fn desktop_vm_memory_uses_the_running_rootstock_socket_proxy() {
@@ -424,6 +479,7 @@ fn status_json_reports_live_services_without_resolving_local_compose() {
     let snapshot: Value = serde_json::from_str(&text).unwrap();
     let app = &snapshot["apps"][0];
     assert_eq!(app["name"], "web");
+    assert_eq!(app["display_name"], "web");
     assert_eq!(app["configured"], true);
     let web = &app["services"][0];
     assert_eq!(web["service"], "web");

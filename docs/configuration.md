@@ -9,6 +9,7 @@
 | `apps/<name>/compose.yml` | Your application's deployment definition | No |
 | `apps/<name>/.env` | Image reference, domain, and Compose interpolation settings | No |
 | `apps/<name>/rootstock.toml` | Enabled Compose profiles, if needed | No |
+| `apps/rootstock.toml` | Optional display names keyed by Compose project identifier | No |
 | `.env` and `.env.*` | Local environment settings at any directory level | No |
 | `infra/Pulumi.yaml` | Infrastructure program definition | Yes |
 | `infra/.env.example` | Generic cloud backend bootstrap settings | Yes |
@@ -57,9 +58,33 @@ The optional [MCP adapter](mcp.md) is a separate binary and reuses the same inve
 status collector, and deployment planner. Its tools and the console's HTTP route have an
 [API reference](api.md), including machine-readable schemas and error contracts.
 
+### Display names
+
+Set display names in `rootstock.toml` at the inventory root selected by `--apps`:
+
+```toml
+[names]
+rootstock-web = "Public website"
+rootstock-proxy = "Shared proxy"
+```
+
+Each key is the full, existing Compose project identifier. The browser and `status` table use
+the configured name; JSON and MCP snapshots expose it as `display_name`. Without an entry,
+the display name defaults to the app name. Entries do not register applications or create projects.
+
+These names do not change inventory directory names, `deploy <name>` targets, MCP name filters,
+Compose projects, containers, networks, or volumes. Keep the existing inventory directory when
+renaming a display name. `list` and deployment plans continue to use the application identifier.
+The collector rereads this file for every snapshot, so a name change appears on the next browser
+refresh without restarting an application or dashboard.
+
+The file belongs on the machine running the collector: your workstation for local CLI/MCP use,
+or a read-only mount for the [hosted dashboard](hosted-dashboard.md#display-names). It contains
+display metadata only; keep credentials in their application-specific configuration.
+
 ### Profiles
 
-An optional `rootstock.toml` has one supported setting:
+An optional `rootstock.toml` inside an application's directory configures its Compose profiles:
 
 ```toml
 profiles = ["prod"]
