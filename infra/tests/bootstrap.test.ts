@@ -14,7 +14,7 @@ function fixture(settings = config, fault?: "public-acl" | "bucket-policy" | "wr
   let denied = false;
   let childFails = false;
   const operations: string[] = [];
-  const projects: { id: string; name: string }[] = [];
+  const projects: { id: string; name: string; owner_uuid: string }[] = [];
   const keys = new Map<string, string>();
   const childEnvironments: NodeJS.ProcessEnv[] = [];
   const clientConfigs: S3ClientConfig[] = [];
@@ -64,14 +64,13 @@ function fixture(settings = config, fault?: "public-acl" | "bucket-policy" | "wr
       const method = options?.method ?? "GET";
       operations.push(`${method} ${path}`);
       const body = options?.body ? JSON.parse(String(options.body)) : {};
-      if (path === "/account") return Response.json({ account: { uuid: "example-account" } });
       if (path === "/projects" && method === "GET") return Response.json({ projects, links: {} });
       if (path === "/projects" && method === "POST") {
-        const project = { id: "example-project", name: body.name };
+        const project = { id: "example-project", name: body.name, owner_uuid: "example-account" };
         projects.push(project);
         return Response.json({ project });
       }
-      if (path === "/projects/example-project") return Response.json({ project: { id: "example-project", name: settings.namespace } });
+      if (path === "/projects/example-project") return Response.json({ project: { id: "example-project", name: settings.namespace, owner_uuid: "example-account" } });
       if (path === "/projects/example-project/resources") return Response.json({ resources: [{ status: "assigned" }] });
       if (path === "/spaces/keys" && method === "POST") {
         const id = `key-${keys.size + 1}`;
@@ -98,6 +97,8 @@ function fixture(settings = config, fault?: "public-acl" | "bucket-policy" | "wr
     denyAccess() { denied = true; },
     /** Exercises cleanup after a provisioning command fails. */
     failChild() { childFails = true; },
+    /** Exposes the recorded cloud identity without inspecting credentials. */
+    ownership() { return JSON.parse(marker!); },
   };
 }
 
@@ -199,7 +200,16 @@ test("bootstrap rejects a bucket in another region", async () => {
 test("bootstrap rejects ambiguous DigitalOcean projects", async () => {
   const settings = { ...config, cloud: "digitalocean" as const, region: "nyc3", token: "example-token" };
   const state = fixture(settings);
-  state.projects.push({ id: "first-project", name: config.namespace }, { id: "second-project", name: config.namespace });
+  state.projects.push({ id: "first-project", name: config.namespace, owner_uuid: "example-account" }, { id: "second-project", name: config.namespace, owner_uuid: "example-account" });
   await assert.rejects(bootstrap(settings, [], state.dependencies), /ambiguous/);
   assert.equal(state.keys.size, 0);
+});
+
+/** Verifies ownership using the project response without account-read permission. */
+test("DigitalOcean bootstrap records the project owner without an account lookup", async () => {
+  const settings = { ...config, cloud: "digitalocean" as const, region: "nyc3", token: "example-token", projectId: "example-project" };
+  const state = fixture(settings);
+  await bootstrap(settings, [], state.dependencies);
+  assert.equal(state.ownership().account, "example-account");
+  assert.ok(!state.operations.includes("GET /account"));
 });

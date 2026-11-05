@@ -38,13 +38,29 @@ trigger resource creation. Explicit adoption does not override another deploymen
 
 Store `DIGITALOCEAN_TOKEN` as an environment secret. Bootstrap needs:
 
-- `account:read`, `project:read`, `project:assign_resource`; also `project:create` when creating a project.
+- `project:read`, `project:assign_resource`; also `project:create` when creating a project.
 - `spaces_key:read`, `spaces_key:create_credentials`, `spaces_key:delete`.
 - Required dependencies: `spaces:read`, `regions:read`, `sizes:read`, `actions:read`.
 
 See [token scopes](https://docs.digitalocean.com/reference/api/scopes/). Host provisioning needs
 its own resource permissions as described in the [configuration reference](configuration.md#optional-cloud-infrastructure).
 Projects organize resources; token permissions are not isolated by project.
+
+For bootstrap and the full Pulumi host lifecycle in an **existing project**, use this profile:
+
+| Resource | Scopes |
+| --- | --- |
+| `droplet` | `create`, `read`, `update`, `delete` |
+| `firewall` | `create`, `read`, `update`, `delete` |
+| `reserved_ip` | `create`, `read`, `update`, `delete` |
+| `spaces_key` | `read`, `create_credentials`, `delete` |
+| `project` | `read`, `assign_resource` |
+| `actions`, `regions`, `sizes`, `image`, `snapshot`, `spaces`, `ssh_key`, `vpc` | `read` |
+
+The project response supplies its owner UUID, so bootstrap needs no `account:read` scope.
+This profile uses an existing SSH key and excludes managed databases, DNS changes, project creation,
+and Spaces-key updates. Add the initial DNS A record through the console. Separate DNS automation
+needs `domain:read`, `domain:create`, and `domain:update` for creating and updating records.
 
 Bootstrap creates a temporary full-access Spaces key to prepare and inspect the bucket, then
 revokes it. A wrapped command receives a separate key scoped to that bucket. Keys are masked in

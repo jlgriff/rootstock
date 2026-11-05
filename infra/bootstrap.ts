@@ -116,7 +116,7 @@ async function ensureBucket(config: BootstrapConfig, account: string, projectId:
   if (!stored) await s3.send(new PutObjectCommand({ ...marker, Body: JSON.stringify(identity), ContentType: "application/json" }));
 }
 
-interface Project { id: string; name: string }
+interface Project { id: string; name: string; owner_uuid: string }
 interface SpacesKey { access_key: string; secret_key: string }
 
 /** Calls DigitalOcean without copying tokens or response bodies into errors. */
@@ -130,10 +130,10 @@ async function digitalOcean<T>(config: BootstrapConfig, dependencies: BootstrapD
 }
 
 /** Reuses an explicit project or an unambiguous deployment name without taking ownership. */
-async function ensureProject(config: BootstrapConfig, dependencies: BootstrapDependencies): Promise<string> {
+async function ensureProject(config: BootstrapConfig, dependencies: BootstrapDependencies): Promise<Project> {
   if (config.projectId) {
     const { project } = await digitalOcean<{ project: Project }>(config, dependencies, `/projects/${encodeURIComponent(config.projectId)}`);
-    return project.id;
+    return project;
   }
   const matches: Project[] = [];
   for (let page = 1; ; page++) {
@@ -142,11 +142,11 @@ async function ensureProject(config: BootstrapConfig, dependencies: BootstrapDep
     if (!result.links.pages?.next) break;
   }
   if (matches.length > 1) throw new Error("Project name is ambiguous; set ROOTSTOCK_PROJECT_ID explicitly");
-  if (matches.length === 1) return matches[0].id;
+  if (matches.length === 1) return matches[0];
   const { project } = await digitalOcean<{ project: Project }>(config, dependencies, "/projects", "POST", {
     name: config.namespace, description: "Shared application infrastructure", purpose: "Web Application", environment: "Production",
   });
-  return project.id;
+  return project;
 }
 
 /** Prepares a durable backend and lends scoped credentials to an optional command. */
@@ -174,8 +174,8 @@ export async function bootstrap(config: BootstrapConfig, command: string[], depe
     return key;
   }
   try {
-    const { account } = await digitalOcean<{ account: { uuid: string } }>(config, dependencies, "/account");
-    const projectId = await ensureProject(config, dependencies);
+    const project = await ensureProject(config, dependencies);
+    const projectId = project.id;
     const key = await createKey("fullaccess");
     const endpoint = `https://${config.region}.digitaloceanspaces.com`;
     const s3 = dependencies.s3({
@@ -183,7 +183,7 @@ export async function bootstrap(config: BootstrapConfig, command: string[], depe
       credentials: { accessKeyId: key.access_key, secretAccessKey: key.secret_key },
       requestChecksumCalculation: "WHEN_REQUIRED", responseChecksumValidation: "WHEN_REQUIRED",
     });
-    try { await ensureBucket(config, account.uuid, projectId, s3); }
+    try { await ensureBucket(config, project.owner_uuid, projectId, s3); }
     finally { s3.destroy(); }
     const assignment = await digitalOcean<{ resources: { status: string }[] }>(config, dependencies, `/projects/${encodeURIComponent(projectId)}/resources`, "POST", { resources: [`do:space:${config.bucket}`] });
     if (assignment.resources.length !== 1 || !["assigned", "already_assigned", "ok"].includes(assignment.resources[0].status)) {
