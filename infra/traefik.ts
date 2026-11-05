@@ -6,7 +6,6 @@ import { ConnectionArgs } from "./config";
 interface TraefikArgs {
   connection: ConnectionArgs;
   hostId: pulumi.Input<string>;
-  /** Where Let's Encrypt sends expiry notices for every hosted domain. */
   acmeEmail: string;
   dependsOn?: pulumi.Resource[];
 }

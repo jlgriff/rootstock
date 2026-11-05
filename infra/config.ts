@@ -60,7 +60,7 @@ export function getConnection(host: pulumi.Input<string>, cloud: InfraConfig["cl
   };
 }
 
-/** Where Let's Encrypt sends certificate expiry notices for every hosted domain. */
+/** Supplies the contact address for ACME account registration. */
 export function getAcmeEmail(): string {
   return config.require("acmeEmail");
 }

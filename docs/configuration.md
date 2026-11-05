@@ -165,8 +165,15 @@ ACME_EMAIL=admin@example.com DOCKER_HOST=ssh://deploy@host.example.com \
 
 Create the network only once. Permit inbound TCP ports 80 and 443, plus SSH access for deployment.
 Point each domain's DNS A record at the server. Publish AAAA records only if IPv6 is configured and
-reachable. The proxy redirects HTTP to HTTPS and stores ACME state in its own `acme` Docker volume;
-retain and back up that volume when maintaining the server.
+reachable. The proxy redirects HTTP to HTTPS. Traefik obtains free Let's Encrypt certificates for
+application routes using the `rootstock` resolver and renews them automatically before expiry.
+HTTP-01 validation requires public DNS to keep pointing at the host and port 80 to remain reachable;
+the HTTPS redirect is compatible with validation.
+
+Certificate management runs inside the proxy, independently of CI and cloud API credentials.
+Traefik stores its ACME account and certificates in the `acme` Docker volume; retain and back up that
+volume across proxy updates and host maintenance. External HTTPS and certificate-expiry monitoring
+can alert you if issuance or renewal fails.
 
 ### Migrate an existing Ferron host
 
