@@ -1,0 +1,61 @@
+name: Bootstrap cloud backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment containing deployment settings
+        type: environment
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: rootstock-bootstrap-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: infra
+    env:
+      ROOTSTOCK_CLOUD: ${{ vars.ROOTSTOCK_CLOUD }}
+      ROOTSTOCK_NAMESPACE: ${{ vars.ROOTSTOCK_NAMESPACE }}
+      ROOTSTOCK_STATE_BUCKET: ${{ vars.ROOTSTOCK_STATE_BUCKET }}
+      ROOTSTOCK_STATE_REGION: ${{ vars.ROOTSTOCK_STATE_REGION }}
+      ROOTSTOCK_PROJECT_ID: ${{ vars.ROOTSTOCK_PROJECT_ID }}
+      ROOTSTOCK_ADOPT_STATE_BUCKET: ${{ vars.ROOTSTOCK_ADOPT_STATE_BUCKET }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+      - run: npm ci
+      - name: Authenticate AWS
+        if: env.ROOTSTOCK_CLOUD == 'aws'
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.ROOTSTOCK_STATE_REGION }}
+      - name: Find or create the backend
+        id: backend
+        run: npm run bootstrap
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      - name: Show backend settings
+        env:
+          BACKEND_URL: ${{ steps.backend.outputs.backend_url }}
+          PROJECT_ID: ${{ steps.backend.outputs.project_id }}
+        run: |
+          printf 'Pulumi backend: `%s`\n\n' "$BACKEND_URL" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$PROJECT_ID" ]; then
+            printf 'DigitalOcean project: `%s`\n' "$PROJECT_ID" >> "$GITHUB_STEP_SUMMARY"
+          fi

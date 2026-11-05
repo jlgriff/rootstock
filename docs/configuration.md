@@ -11,6 +11,7 @@
 | `apps/<name>/rootstock.toml` | Enabled Compose profiles, if needed | No |
 | `.env` and `.env.*` | Local environment settings at any directory level | No |
 | `infra/Pulumi.yaml` | Infrastructure program definition | Yes |
+| `infra/.env.example` | Generic cloud backend bootstrap settings | Yes |
 | `infra/Pulumi.example.yaml` | Generic stack configuration template | Yes |
 | `infra/Pulumi.aws.example.yaml` | Generic AWS stack configuration template | Yes |
 | `infra/cloud-init.sh` | Shared Ubuntu/Docker bootstrap for both providers | Yes |
@@ -216,6 +217,8 @@ volumes until the chosen deployment is verified.
 ### Optional cloud infrastructure
 
 Needs Node.js, npm, Pulumi, a state backend, provider credentials, and an uploaded SSH public key.
+The optional [backend bootstrap](bootstrap.md) finds or creates a private AWS S3 or DigitalOcean
+Spaces state bucket and supports manually triggered CI without committing deployment details.
 Select AWS with `rootstock:cloud=aws` or DigitalOcean with `rootstock:cloud=digitalocean` (the default
 for existing stacks). Only the chosen provider's host settings are required.
 
@@ -311,9 +314,10 @@ switch DNS. Docker volumes survive container releases but are host-local and do 
 loss without backups. Rootstock does not provision app-specific object storage, copy volumes,
 or translate storage consistency/locking semantics between providers.
 
-`npm test` in `infra/` exercises both real stack branches with Pulumi's mock resource monitor.
-It checks the shared SSH output, provider isolation, bootstrap, and SSH firewall settings without
-creating resources. It does not replace an authenticated preview or a live provisioning rehearsal.
+`npm test` in `infra/` exercises both real stack branches with Pulumi's mock resource monitor and
+backend bootstrap against simulated SDK/API boundaries. It checks provider isolation, SSH settings,
+backend ownership, repeat runs, and temporary-key cleanup without creating resources. It does not
+replace an authenticated preview or a live provisioning rehearsal.
 
 ### Proxy configuration
 

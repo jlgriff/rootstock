@@ -30,7 +30,8 @@ Compose pulls the image, starts the app, and waits for its healthcheck if the im
 Traefik provides HTTPS. Rootstock and the build tools run on your workstation, not the server.
 
 Provision on AWS or DigitalOcean with the optional [cloud infrastructure](docs/configuration.md#optional-cloud-infrastructure),
-or use an existing Docker host. Application configuration and deploy commands stay the same.
+or use an existing Docker host. [Bootstrap the cloud backend](docs/bootstrap.md) locally or in CI;
+repeat runs reuse the deployment's resources. Application configuration and deploy commands stay the same.
 
 Copy the example into another `apps/<name>` directory to add an app. Real application inventories,
 environment files, and infrastructure stack settings are gitignored.
