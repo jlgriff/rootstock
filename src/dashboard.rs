@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::net::Ipv4Addr;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use tiny_http::{Header, Method, Response, Server};
 
 use crate::status::{self, AppStatus, ServiceStatus, Snapshot};
@@ -414,9 +414,27 @@ fn render(snapshot: &Snapshot, refresh: u64, inspect: Option<usize>) -> String {
     document(&content, refresh)
 }
 
-/// Serves the local console with read-only collection and URL-backed inspection state.
-pub fn serve(root: &Path, port: u16, refresh: u64) -> Result<()> {
-    let server = Server::http((Ipv4Addr::LOCALHOST, port)).map_err(anyhow::Error::msg)?;
+/// Serves read-only status with an optional public hostname behind an authenticated proxy.
+pub fn serve(root: &Path, port: u16, refresh: u64, public_host: Option<&str>) -> Result<()> {
+    if let Some(host) = public_host {
+        ensure!(
+            host.split('.').all(|label| {
+                !label.is_empty()
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            }),
+            "public host must be a hostname without a scheme, path, or port"
+        );
+    }
+    let bind = if public_host.is_some() {
+        Ipv4Addr::UNSPECIFIED
+    } else {
+        Ipv4Addr::LOCALHOST
+    };
+    let server = Server::http((bind, port)).map_err(anyhow::Error::msg)?;
     let address = server
         .server_addr()
         .to_ip()
@@ -436,7 +454,11 @@ pub fn serve(root: &Path, port: u16, refresh: u64) -> Result<()> {
             .and_then(|value| value.parse::<usize>().ok());
         let (code, body) = if host != address.to_string()
             && host != format!("localhost:{}", address.port())
-        {
+            && host != format!("127.0.0.1:{}", address.port())
+            && !public_host.is_some_and(|allowed| {
+                host.eq_ignore_ascii_case(allowed)
+                    || host.eq_ignore_ascii_case(&format!("{allowed}:443"))
+            }) {
             (400, "Unexpected Host header".to_string())
         } else if request.method() != &Method::Get {
             (405, "Only GET is supported".to_string())

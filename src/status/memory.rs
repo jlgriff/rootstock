@@ -7,7 +7,9 @@ use super::HostMemory;
 
 /// Reads Linux host counters without installing an agent or executing inside app containers.
 pub(super) fn collect(endpoint: &str) -> Result<HostMemory> {
-    let contents = if endpoint.starts_with("ssh://") {
+    let contents = if let Some(path) = std::env::var_os("ROOTSTOCK_HOST_MEMINFO") {
+        fs::read_to_string(path).context("reading mounted host memory counters")?
+    } else if endpoint.starts_with("ssh://") {
         let output = Command::new("ssh")
             .args([
                 "-o",

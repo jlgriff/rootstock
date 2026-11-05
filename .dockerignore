@@ -1,0 +1,14 @@
+**
+!Cargo.toml
+!Cargo.lock
+!src/
+!src/**
+!mcp/
+!mcp/Cargo.toml
+!mcp/src/
+!mcp/src/**
+!tests/
+!tests/sqlite/
+!tests/sqlite/Cargo.toml
+!tests/sqlite/src/
+!tests/sqlite/src/**

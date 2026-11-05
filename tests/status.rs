@@ -80,6 +80,7 @@ esac
             .env("PATH", path)
             .env_remove("DOCKER_HOST")
             .env_remove("DOCKER_CONTEXT")
+            .env_remove("ROOTSTOCK_HOST_MEMINFO")
             .env("FIXTURE_DIRECTORY", self.directory.path())
             .arg("--apps")
             .arg(self.directory.path().join("apps"));
@@ -125,9 +126,15 @@ esac
 
     /// Requests a browser view from a disposable local dashboard process.
     fn page(&self, path: &str) -> String {
+        self.request(path, &[], None)
+    }
+
+    /// Exercises an explicit listener mode and Host header without leaving a server running.
+    fn request(&self, path: &str, arguments: &[&str], host: Option<&str>) -> String {
         let child = self
             .command()
             .args(["observe", "--port", "0", "--refresh", "30"])
+            .args(arguments)
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
@@ -137,22 +144,21 @@ esac
         BufReader::new(server.0.stdout.take().unwrap())
             .read_line(&mut line)
             .unwrap();
-        assert!(
-            line.starts_with("http://127.0.0.1:"),
-            "missing loopback URL: {line}"
-        );
+        assert!(line.starts_with("http://"), "missing listener URL: {line}");
         let address = line
             .trim()
             .strip_prefix("http://")
             .unwrap()
-            .trim_end_matches('/');
-        let mut stream = TcpStream::connect(address).unwrap();
+            .trim_end_matches('/')
+            .replace("0.0.0.0", "127.0.0.1");
+        let mut stream = TcpStream::connect(&address).unwrap();
         stream
             .set_read_timeout(Some(std::time::Duration::from_secs(5)))
             .unwrap();
         write!(
             stream,
-            "GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+            "GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+            host.unwrap_or(&address)
         )
         .unwrap();
         let mut response = String::new();
@@ -172,6 +178,70 @@ impl Drop for Server {
 }
 
 const MEMINFO: &str = "MemTotal: 1048576 kB\nMemFree: 131072 kB\nMemAvailable: 655360 kB\nBuffers: 16384 kB\nCached: 262144 kB\nSReclaimable: 16384 kB\nSwapTotal: 2097152 kB\nSwapFree: 2031616 kB\n";
+
+/// Allows only the configured public hostname while retaining loopback healthchecks.
+#[test]
+fn hosted_dashboard_accepts_its_public_host_and_rejects_other_hosts() {
+    let fixture = Fixture::new();
+    let arguments = ["--public-host", "dashboard.example.com"];
+    let page = fixture.request("/", &arguments, Some("dashboard.example.com"));
+    assert!(page.starts_with("HTTP/1.1 200"), "{page}");
+    assert!(page.contains("Container memory"));
+    let favicon = fixture.request(
+        "/favicon.svg",
+        &arguments,
+        Some("dashboard.example.com:443"),
+    );
+    assert!(favicon.starts_with("HTTP/1.1 200"), "{favicon}");
+    assert!(favicon.contains("image/svg+xml"));
+    let unknown = fixture.request("/", &arguments, Some("other.example.com"));
+    assert!(unknown.starts_with("HTTP/1.1 400"), "{unknown}");
+    assert!(
+        fixture
+            .request("/favicon.svg", &arguments, None)
+            .starts_with("HTTP/1.1 200")
+    );
+}
+
+/// Refuses URLs and malformed names before opening a hosted listener.
+#[test]
+fn hosted_dashboard_requires_a_hostname_without_a_scheme_or_path() {
+    let fixture = Fixture::new();
+    let output = fixture
+        .command()
+        .args(["observe", "--public-host", "https://dashboard.example.com/"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("hostname"));
+    assert!(output.stdout.is_empty());
+}
+
+/// Reads explicitly mounted host counters when the Docker engine uses a private TCP proxy.
+#[test]
+fn hosted_dashboard_reads_a_mounted_host_meminfo_file() {
+    let fixture = Fixture::new();
+    fixture.host_memory(MEMINFO);
+    let output = fixture
+        .command()
+        .env("DOCKER_HOST", "tcp://socket-proxy:2375")
+        .env(
+            "ROOTSTOCK_HOST_MEMINFO",
+            fixture.directory.path().join("meminfo"),
+        )
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(snapshot["host_memory"]["total_bytes"], 1024_u64.pow(3));
+    assert!(snapshot["host_memory_error"].is_null());
+    assert!(!fixture.directory.path().join("ssh-args").exists());
+}
 
 /// Separates host capacity from container usage and follows Docker context precedence.
 #[test]

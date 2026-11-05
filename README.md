@@ -50,6 +50,7 @@ The browser console provides app links; `status --json` and MCP include the same
 `observe` prints a local browser URL with the same information and refreshes every ten seconds.
 Stop it with Ctrl-C. Both use your selected Docker host; the browser view adds no service to the VM.
 See [status configuration](docs/configuration.md#live-status-and-local-dashboard) for details.
+For access from other devices, [host the dashboard behind HTTPS and password protection](docs/hosted-dashboard.md).
 
 For AI clients, the optional [MCP adapter](docs/mcp.md) provides read-only inspection and validated
 deployment plans over local stdio. Build it with `cargo build --release -p rootstock-mcp`.

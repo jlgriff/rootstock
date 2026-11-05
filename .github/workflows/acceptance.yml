@@ -3,9 +3,9 @@ name: Acceptance tests
 on:
   push:
     branches: [main]
-    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', '.github/workflows/acceptance.yml']
+    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', 'Dockerfile', '.dockerignore', '.github/workflows/acceptance.yml']
   pull_request:
-    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', '.github/workflows/acceptance.yml']
+    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', 'Dockerfile', '.dockerignore', '.github/workflows/acceptance.yml']
 
 jobs:
   acceptance:
@@ -16,5 +16,7 @@ jobs:
         run: rm -rf "${GITHUB_WORKSPACE:?}/examples"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.9.3
+      - name: Build hosted console
+        run: docker build --tag rootstock-dashboard:test .
       - run: ./tests/acceptance/run.sh
       - run: ./tests/sqlite/run.sh

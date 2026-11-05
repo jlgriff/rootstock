@@ -39,6 +39,7 @@ and use `target/release/rootstock`. `--help` and `--version` are available.
 | `observe` | Serves a local browser view that queries the selected Docker host |
 | `observe --port <port>` | Local loopback HTTP port; defaults to `8787`; `0` selects an available port |
 | `observe --refresh <seconds>` | Browser refresh interval; defaults to `10`; minimum `1` |
+| `observe --public-host <hostname>` | Enables an all-IPv4 listener for an authenticated reverse proxy; adds that hostname and its `:443` form to accepted Host headers |
 | `deploy <name>` | Validates the whole inventory, then deploys one application |
 | `deploy <name> --dry-run` | Resolves configuration and prints the command without starting containers |
 
@@ -445,6 +446,12 @@ unsupported for host counters. Other transports, including local Docker Desktop 
 macOS and remote TCP engines, show host memory as unavailable; they never substitute macOS RAM.
 Use direct reads only when the client and Docker daemon share the same Linux host.
 
+`ROOTSTOCK_HOST_MEMINFO` overrides the counter source with an explicit file path on the client.
+It takes precedence over SSH and native Linux reads. A missing or invalid override is reported
+as unavailable rather than falling back to a different host. The
+[hosted dashboard template](hosted-dashboard.md) uses this with a read-only host bind mount;
+it requires no additional socket-proxy permissions.
+
 Host used memory is `MemTotal - MemAvailable`, matching the kernel's estimate of RAM unavailable
 without swapping. Available memory includes reclaimable cache. Cache and buffers are
 `Cached + Buffers + SReclaimable`; this overlaps the used and available figures and must not be
@@ -466,8 +473,12 @@ or metrics history. Responses disable browser caching. Only selected status fiel
 or JSON output; container environments, complete labels, mounts, and credentials are excluded.
 The collector issues read-only `ps`, `inspect`, `stats`, and local `context inspect` calls,
 plus a host memory read where supported. It performs no app lifecycle actions.
-No dashboard container, agent, Rust runtime, or extra port is installed on the serving VM;
-active queries briefly use its existing Docker/SSH infrastructure.
+The default local console installs no container, agent, Rust runtime, or extra port on the serving
+VM; active queries briefly use its existing Docker/SSH infrastructure.
+
+For an optional resident console on your own subdomain, use the
+[password-protected hosted dashboard](hosted-dashboard.md). It keeps the same read-only
+data contract and requires no changes to public applications' authentication.
 
 ### Styling the console
 

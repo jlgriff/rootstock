@@ -333,7 +333,7 @@ MCP, with no JSON status route or mutation endpoints.
 | Parameter | Location | Required? | Meaning |
 | --- | --- | --- | --- |
 | `inspect` | query | No | Zero-based unsigned decimal deployment index in the current project-sorted snapshot; opens its container details |
-| `Host` | header | Yes | Exactly `127.0.0.1:<port>` or `localhost:<port>` |
+| `Host` | header | Yes | Loopback listener name; hosted mode also accepts its configured public hostname, optionally with `:443` |
 
 ```sh
 curl http://127.0.0.1:8787/
@@ -348,7 +348,8 @@ Each request collects fresh data. Automatic refresh retains the current URL and 
 | Status | Body | Meaning |
 | --- | --- | --- |
 | `200` | HTML overview | Collection succeeded, including an empty inventory/host |
-| `400` | `Unexpected Host header` | Host header is outside the accepted loopback names |
+| `400` | `Unexpected Host header` | Host header is outside the accepted listener names and configured public hostname |
+| `401` | Proxy authentication challenge | Hosted template requires a valid username and password before forwarding any request |
 | `404` | `Not found` | Unsupported path or query syntax |
 | `405` | `Only GET is supported` | Method is not GET, including HEAD |
 | `503` | HTML error view | Docker/SSH, collection, or local registration failed; connection diagnostics are expandable |
@@ -356,14 +357,16 @@ Each request collects fresh data. Automatic refresh retains the current URL and 
 The Host check runs before method and path checks. Responses set `Content-Type: text/html;
 charset=utf-8`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, and the console's
 Content Security Policy. No CORS access is advertised. Assets are embedded; no external asset
-requests or browser JavaScript are needed. HTTP authentication is not implemented; access is
-restricted by the loopback listener and Host check. Reads use the operator's configured Docker/SSH
-credentials. The console adds no public proxy route.
+requests or browser JavaScript are needed. The default listener is restricted to loopback and
+validates Host headers. The [hosted template](hosted-dashboard.md) adds a public hostname behind
+Traefik's HTTPS and Basic authentication; it publishes no backend port and strips the Authorization
+header before forwarding. The Rust server itself does not authenticate requests. Reads use the
+selected Docker connection, with an explicit mounted counter file available for host memory.
 
 ### `GET /favicon.svg`
 
-Returns the same embedded SVG used for the console's header logo. It requires the same loopback
-Host header as the overview. No query parameters are accepted.
+Returns the same embedded SVG used for the console's header logo. It accepts the same Host names
+and hosted proxy authentication as the overview. No query parameters are accepted.
 
 | Status | Content type | Meaning |
 | --- | --- | --- |

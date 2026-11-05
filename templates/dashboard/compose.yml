@@ -1,0 +1,31 @@
+services:
+  dashboard:
+    image: ${APP_IMAGE:?set APP_IMAGE to the dashboard image}
+    pull_policy: never
+    restart: unless-stopped
+    command: ["--apps", "/apps", "observe", "--public-host", "${APP_DOMAIN:?set APP_DOMAIN}"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      DOCKER_HOST: tcp://socket-proxy:2375
+      ROOTSTOCK_HOST_MEMINFO: /host/meminfo
+    volumes:
+      - /proc/meminfo:/host/meminfo:ro
+    networks: [socket]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${ROOTSTOCK_SOCKET_NETWORK:-rootstock-proxy_socket}"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-console.rule=Host(`${APP_DOMAIN:?set APP_DOMAIN}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-console.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-console.tls.certresolver=rootstock"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-console.service=${COMPOSE_PROJECT_NAME}-console"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-console.middlewares=${COMPOSE_PROJECT_NAME}-auth"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME}-console.loadbalancer.server.port=8787"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-auth.basicauth.users=${DASHBOARD_AUTH:?set DASHBOARD_AUTH to a username and bcrypt hash}"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-auth.basicauth.removeheader=true"
+
+networks:
+  socket:
+    external: true
+    name: ${ROOTSTOCK_SOCKET_NETWORK:-rootstock-proxy_socket}

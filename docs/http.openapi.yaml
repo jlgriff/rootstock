@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Rootstock local console
   version: 0.1.0
-  description: Read-only loopback HTML interface. MCP uses a separate stdio process.
+  description: Read-only HTML interface; loopback by default, optionally hosted behind authenticated HTTPS. MCP uses a separate stdio process.
 servers:
   - url: http://127.0.0.1:8787
     description: Default local port; select another with observe --port.
@@ -12,7 +12,9 @@ paths:
       operationId: getConsoleOverview
       summary: View live deployments and optional container details
       description: >-
-        Host must be 127.0.0.1:<port> or localhost:<port>. Only the inspect query parameter
+        Host must match a loopback listener name or the hostname configured with
+        observe --public-host, optionally with :443. The hosted template requires
+        proxy Basic authentication. Only the inspect query parameter
         is supported, once, as an unsigned decimal index. Other query syntax returns 404.
         An out-of-range numeric index renders the overview with all details closed.
         Other HTTP methods return 405; unknown paths return 404.
@@ -40,6 +42,8 @@ paths:
                 type: string
         '400':
           $ref: '#/components/responses/UnexpectedHost'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
         '404':
           $ref: '#/components/responses/NotFound'
         '405':
@@ -56,7 +60,8 @@ paths:
       summary: Read the shared console logo as an SVG favicon
       description: >-
         Returns the same embedded artwork used by the header. Host must be
-        127.0.0.1:<port> or localhost:<port>. No query parameters are accepted.
+        a loopback listener name or the configured public hostname, optionally with :443.
+        Hosted proxy authentication applies to this path too. No query parameters are accepted.
         This route does not query Docker or read inventory.
       responses:
         '200':
@@ -70,12 +75,21 @@ paths:
                 type: string
         '400':
           $ref: '#/components/responses/UnexpectedHost'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
         '404':
           $ref: '#/components/responses/NotFound'
         '405':
           $ref: '#/components/responses/MethodNotAllowed'
 components:
   responses:
+    AuthenticationRequired:
+      description: Hosted proxy requires Basic authentication; absent from the default loopback deployment.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          example: Basic realm="traefik"
     UnexpectedHost:
       description: Unexpected Host header; checked before the method or path.
       content:
