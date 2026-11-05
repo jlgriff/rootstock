@@ -9,18 +9,33 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use crate::{inventory, routes};
 
 mod links;
+mod memory;
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
 pub struct Snapshot {
     pub captured_at: String,
+    pub host_memory: Option<HostMemory>,
+    pub host_memory_error: Option<String>,
     pub apps: Vec<AppStatus>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
+pub struct HostMemory {
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+    pub available_bytes: u64,
+    pub cache_and_buffers_bytes: u64,
+    pub swap_total_bytes: u64,
+    pub swap_used_bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-schema", derive(schemars::JsonSchema))]
 pub struct AppStatus {
     pub name: String,
+    pub display_name: String,
     pub project: String,
     pub configured: bool,
     pub services: Vec<ServiceStatus>,
@@ -173,14 +188,35 @@ fn docker(args: &[&str]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
+/// Resolves the engine address using Docker's context-over-environment precedence.
+fn endpoint() -> Result<String> {
+    if std::env::var("DOCKER_CONTEXT")
+        .unwrap_or_default()
+        .is_empty()
+        && let Ok(host) = std::env::var("DOCKER_HOST")
+        && !host.is_empty()
+    {
+        return Ok(host);
+    }
+    serde_json::from_slice(&docker(&[
+        "context",
+        "inspect",
+        "--format",
+        "{{json .Endpoints.docker.Host}}",
+    ])?)
+    .context("reading Docker endpoint")
+}
+
 /// Combines live Compose containers with optional local registration without resolving app secrets.
 pub fn collect(root: &Path) -> Result<Snapshot> {
+    let names = inventory::display_names(root)?;
     let mut apps = BTreeMap::new();
     if root.try_exists()? {
         for app in inventory::discover(root)? {
             apps.insert(
                 app.project.clone(),
                 AppStatus {
+                    display_name: app.name.clone(),
                     name: app.name,
                     project: app.project,
                     configured: true,
@@ -189,6 +225,7 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
             );
         }
     }
+    let endpoint = endpoint();
     let listing = String::from_utf8(docker(&[
         "ps",
         "--all",
@@ -204,6 +241,7 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
         .filter(|(_, project)| project.starts_with(inventory::PROJECT_PREFIX))
         .map(|(id, _)| id)
         .collect();
+    let mut memory_proxy = None;
     if !ids.is_empty() {
         let mut args = vec!["inspect"];
         args.extend(&ids);
@@ -233,7 +271,7 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
                 stats.insert(sample.id.clone(), sample);
             }
         }
-        let local = links::local_engine();
+        let local = endpoint.as_deref().is_ok_and(links::local_engine);
         let urls: Vec<_> = containers
             .iter()
             .map(|container| links::derive(container, &containers, local))
@@ -246,7 +284,15 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
             else {
                 continue;
             };
+            if container.state.running
+                && labels
+                    .get("com.docker.compose.service")
+                    .is_some_and(|service| service == "socket-proxy")
+            {
+                memory_proxy.get_or_insert_with(|| container.id.clone());
+            }
             let app = apps.entry(project.clone()).or_insert_with(|| AppStatus {
+                display_name: String::new(),
                 name: project
                     .strip_prefix(inventory::PROJECT_PREFIX)
                     .unwrap()
@@ -260,11 +306,19 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
         }
     }
     for app in apps.values_mut() {
+        app.display_name = names.get(&app.project).unwrap_or(&app.name).clone();
         app.services
             .sort_by(|a, b| (&a.service, &a.container).cmp(&(&b.service, &b.container)));
     }
+    let (host_memory, host_memory_error) =
+        match endpoint.and_then(|host| memory::collect(&host, memory_proxy.as_deref())) {
+            Ok(memory) => (Some(memory), None),
+            Err(error) => (None, Some(format!("{error:#}"))),
+        };
     Ok(Snapshot {
         captured_at: OffsetDateTime::now_utc().format(&Rfc3339)?,
+        host_memory,
+        host_memory_error,
         apps: apps.into_values().collect(),
     })
 }
@@ -377,14 +431,14 @@ pub fn table(snapshot: &Snapshot) -> String {
     for app in &snapshot.apps {
         if app.services.is_empty() {
             rows.push(vec![
-                app.name.clone(),
+                app.display_name.clone(),
                 "-".to_string(),
                 "not deployed".to_string(),
             ]);
         }
         for service in &app.services {
             rows.push(vec![
-                app.name.clone(),
+                app.display_name.clone(),
                 service.service.clone(),
                 format!(
                     "{} / {}",
@@ -432,6 +486,17 @@ pub fn table(snapshot: &Snapshot) -> String {
     output.push('\n');
     if snapshot.apps.is_empty() {
         output.push_str("No rootstock applications found.\n");
+    }
+    if let Some(memory) = &snapshot.host_memory {
+        let mib = 1024_f64.powi(2);
+        output.push_str(&format!(
+            "\nHost memory: {:.1} / {:.1} MiB used; {:.1} MiB available; {:.1} MiB cache and buffers\nSwap: {:.1} / {:.1} MiB used\n",
+            memory.used_bytes as f64 / mib, memory.total_bytes as f64 / mib,
+            memory.available_bytes as f64 / mib, memory.cache_and_buffers_bytes as f64 / mib,
+            memory.swap_used_bytes as f64 / mib, memory.swap_total_bytes as f64 / mib,
+        ));
+    } else if let Some(error) = &snapshot.host_memory_error {
+        output.push_str(&format!("\nHost memory unavailable: {error}\n"));
     }
     output
 }

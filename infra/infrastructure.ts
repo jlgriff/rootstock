@@ -21,7 +21,7 @@ export function createHost(config: InfraConfig): Host {
 function createDigitalOceanHost(config: Extract<InfraConfig, { cloud: "digitalocean" }>): Host {
   const droplet = new digitalocean.Droplet(config.name, {
     name: config.name, region: config.region, size: config.size,
-    image: "ubuntu-24-04-x64", userData, sshKeys: config.sshKeyFingerprints,
+    image: config.image, userData, sshKeys: config.sshKeyFingerprints,
   }, { ignoreChanges: ["image", "userData", "sshKeys"] });
   const address = new digitalocean.ReservedIp(`${config.name}-ip`, {
     dropletId: droplet.id.apply(Number), region: config.region,
@@ -39,7 +39,17 @@ function createDigitalOceanHost(config: Extract<InfraConfig, { cloud: "digitaloc
       { protocol: "icmp", portRange: "1-65535", destinationAddresses: ["0.0.0.0/0", "::/0"] },
     ],
   });
-  return { id: droplet.id, publicIp: address.ipAddress, dependencies: [droplet, address, firewall] };
+  const dependencies: pulumi.Resource[] = [droplet, address, firewall];
+  if (config.projectId) {
+    dependencies.push(new digitalocean.ProjectResources(`${config.name}-project`, {
+      project: config.projectId,
+      resources: [
+        droplet.dropletUrn,
+        pulumi.interpolate`do:floatingip:${address.ipAddress}`,
+      ],
+    }));
+  }
+  return { id: droplet.id, publicIp: address.ipAddress, dependencies };
 }
 
 /** Provisions an IPv4 Ubuntu host without a NAT gateway or load balancer. */

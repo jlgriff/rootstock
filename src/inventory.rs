@@ -1,8 +1,9 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 
 use crate::{compose, routes};
 
@@ -34,6 +35,17 @@ struct Settings {
     profiles: Vec<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct InventorySettings {
+    #[serde(default)]
+    names: BTreeMap<String, String>,
+}
+
+/// Reads display names keyed by stable Compose project identifiers without resolving app secrets.
+pub fn display_names(root: &Path) -> Result<BTreeMap<String, String>> {
+    Ok(read_settings::<InventorySettings>(root)?.names)
+}
+
 /// Finds every application below a directory: one folder holding one Compose file.
 pub fn discover(root: &Path) -> Result<Vec<Discovered>> {
     let mut folders: Vec<_> = fs::read_dir(root)
@@ -54,7 +66,7 @@ pub fn discover(root: &Path) -> Result<Vec<Discovered>> {
         let name = folder.file_name().to_string_lossy().to_string();
         found.push(Discovered {
             project: format!("{PROJECT_PREFIX}{name}"),
-            profiles: read_settings(&directory)?.profiles,
+            profiles: read_settings::<Settings>(&directory)?.profiles,
             name,
             directory,
         });
@@ -80,11 +92,11 @@ pub fn load(root: &Path) -> Result<Vec<App>> {
         .collect()
 }
 
-/// Reads an application's rootstock settings, which only exist when it needs profiles.
-fn read_settings(directory: &Path) -> Result<Settings> {
+/// Reads optional TOML settings with their file path included in errors.
+fn read_settings<T: DeserializeOwned + Default>(directory: &Path) -> Result<T> {
     let path = directory.join("rootstock.toml");
     if !path.is_file() {
-        return Ok(Settings::default());
+        return Ok(T::default());
     }
 
     let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;

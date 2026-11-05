@@ -30,7 +30,8 @@ Compose pulls the image, starts the app, and waits for its healthcheck if the im
 Traefik provides HTTPS. Rootstock and the build tools run on your workstation, not the server.
 
 Provision on AWS or DigitalOcean with the optional [cloud infrastructure](docs/configuration.md#optional-cloud-infrastructure),
-or use an existing Docker host. Application configuration and deploy commands stay the same.
+or use an existing Docker host. [Bootstrap the cloud backend](docs/bootstrap.md) locally or in CI;
+repeat runs reuse the deployment's resources. Application configuration and deploy commands stay the same.
 
 Copy the example into another `apps/<name>` directory to add an app. Real application inventories,
 environment files, and infrastructure stack settings are gitignored.
@@ -44,10 +45,13 @@ DOCKER_HOST=ssh://deploy@host.example.com cargo run -- observe
 ```
 
 `status` shows live services, domains, internal and published ports, health, uptime, RAM, and CPU.
+SSH-connected Linux hosts and local OrbStack/Docker Desktop VMs with Rootstock's socket proxy
+also show whole-host memory, available RAM, cache, and swap.
 The browser console provides app links; `status --json` and MCP include the same derived URLs.
 `observe` prints a local browser URL with the same information and refreshes every ten seconds.
 Stop it with Ctrl-C. Both use your selected Docker host; the browser view adds no service to the VM.
 See [status configuration](docs/configuration.md#live-status-and-local-dashboard) for details.
+For access from other devices, [host the dashboard behind HTTPS and password protection](docs/hosted-dashboard.md).
 
 For AI clients, the optional [MCP adapter](docs/mcp.md) provides read-only inspection and validated
 deployment plans over local stdio. Build it with `cargo build --release -p rootstock-mcp`.
@@ -88,7 +92,7 @@ independent of the core workspace.
 cargo test --workspace
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cd infra && npm ci && npm run typecheck && npm test
+cd infra && npm ci && npm test
 ```
 
 The CLI, SQLite test fixture, and MCP adapter use Rust. Optional Pulumi infrastructure and its mock tests use

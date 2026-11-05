@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::net::Ipv4Addr;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use tiny_http::{Header, Method, Response, Server};
 
 use crate::status::{self, AppStatus, ServiceStatus, Snapshot};
@@ -269,6 +269,52 @@ fn service_details(app: &AppStatus, index: usize, open: bool) -> String {
     content
 }
 
+/// Separates whole-host capacity and cache from the running-container totals.
+fn host_memory(snapshot: &Snapshot) -> String {
+    let Some(memory) = &snapshot.host_memory else {
+        return format!(
+            r#"<section class="mt-6 rounded-xl border border-slate-200 bg-white p-5"><h2 class="text-sm font-semibold">Host memory unavailable</h2><p class="mt-2 text-xs text-muted">{}</p></section>"#,
+            escape(
+                snapshot
+                    .host_memory_error
+                    .as_deref()
+                    .unwrap_or("No host memory sample")
+            )
+        );
+    };
+    let label = |bytes| memory_label(Some(bytes as f64));
+    let metrics = [
+        (
+            "Used / total",
+            format!(
+                "{} / {}",
+                label(memory.used_bytes),
+                label(memory.total_bytes)
+            ),
+        ),
+        ("Available", label(memory.available_bytes)),
+        ("Cache and buffers", label(memory.cache_and_buffers_bytes)),
+        (
+            "Swap used / total",
+            format!(
+                "{} / {}",
+                label(memory.swap_used_bytes),
+                label(memory.swap_total_bytes)
+            ),
+        ),
+    ];
+    let mut content = String::from(
+        r#"<section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 lg:p-6" aria-labelledby="host-memory-heading"><h2 id="host-memory-heading" class="text-sm font-semibold">Host memory</h2><p class="mt-2 text-xs text-muted">Whole host, including containers, Docker, and the operating system.</p><dl class="mt-5 grid grid-cols-2 gap-5 lg:grid-cols-4">"#,
+    );
+    for (name, value) in metrics {
+        content.push_str(&format!(
+            r#"<div class="min-w-0"><dt class="text-xs font-medium text-muted">{name}</dt><dd class="mt-2 text-base font-semibold tabular-nums">{value}</dd></div>"#,
+        ));
+    }
+    content.push_str(r#"</dl><p class="mt-5 text-xs leading-relaxed text-muted">Used is total minus available. Cache overlaps these figures; it is not additional usage.</p></section>"#);
+    content
+}
+
 /// Presents deployment health first and preserves expanded inspection across automatic refreshes.
 fn render(snapshot: &Snapshot, refresh: u64, inspect: Option<usize>) -> String {
     let total: usize = snapshot.apps.iter().map(|app| app.services.len()).sum();
@@ -296,6 +342,7 @@ fn render(snapshot: &Snapshot, refresh: u64, inspect: Option<usize>) -> String {
         snapshot.apps.len(),
         memory_label(memory)
     );
+    content.push_str(&host_memory(snapshot));
     if attention > 0 {
         let noun = if attention == 1 {
             "deployment"
@@ -358,7 +405,7 @@ fn render(snapshot: &Snapshot, refresh: u64, inspect: Option<usize>) -> String {
 <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 gap-y-5 p-5 lg:grid-cols-[minmax(200px,1fr)_140px_110px_75px_100px] lg:gap-4 lg:p-6"><div class="col-span-full flex min-w-0 items-start gap-3 lg:col-span-1 lg:gap-4 [&>div]:min-w-0 [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:tracking-tight [&_h3]:wrap-anywhere"><span class="grid size-[42px] shrink-0 place-items-center rounded-xl border border-emerald-100 bg-emerald-50/60 text-emerald-700 [&>svg]:size-[21px]">{}</span><div><h3 id="deployment-name-{index}">{}</h3><p class="mt-1.5 text-xs leading-relaxed text-muted wrap-anywhere">{}</p><p class="mt-1.5 text-[11px] leading-relaxed text-muted">{running} running · {} containers{extra}</p></div></div>
 <div class="min-w-0 self-center">{}</div><div class="flex min-w-0 flex-col gap-2 [&>span]:text-[10px] [&>span]:text-muted sm:[&>span]:text-[11px] [&>strong]:whitespace-nowrap [&>strong]:text-xs [&>strong]:font-medium [&>strong]:text-slate-700 [&>strong]:tabular-nums sm:[&>strong]:text-[13px]"><span>Memory</span><strong>{}</strong></div><div class="flex min-w-0 flex-col gap-2 [&>span]:text-[10px] [&>span]:text-muted sm:[&>span]:text-[11px] [&>strong]:whitespace-nowrap [&>strong]:text-xs [&>strong]:font-medium [&>strong]:text-slate-700 [&>strong]:tabular-nums sm:[&>strong]:text-[13px]"><span>CPU</span><strong>{cpu}</strong></div>
 <a class="col-span-full inline-flex items-center justify-between gap-2 whitespace-nowrap border-t border-slate-100 pt-4 text-xs font-medium text-muted hover:text-brand lg:col-span-1 lg:justify-end lg:border-0 lg:pt-0 [&>svg]:size-3 [&>svg]:text-muted aria-expanded:[&>svg]:rotate-90" href="{href}" aria-expanded="{open}" aria-controls="inspection-{index}">{action}{}</a></div>{}</article>"#,
-            icon("stack"), escape(&app.name), endpoint, app.services.len(), badge(label, tone), memory_label(memory), icon("chevron"), service_details(app, index, open)));
+            icon("stack"), escape(&app.display_name), endpoint, app.services.len(), badge(label, tone), memory_label(memory), icon("chevron"), service_details(app, index, open)));
     }
     if snapshot.apps.is_empty() {
         content.push_str(&format!(r#"<div class="rounded-xl border border-slate-200 bg-white px-6 py-14 text-center [&_h3]:text-[17px] [&_h3]:font-semibold [&_p]:mx-auto [&_p]:mt-3 [&_p]:mb-6 [&_p]:max-w-sm [&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:text-muted [&_code]:rounded-md [&_code]:border [&_code]:border-slate-200 [&_code]:bg-slate-50 [&_code]:px-3.5 [&_code]:py-2.5 [&_code]:text-xs [&_code]:text-muted"><span class="mx-auto mb-5 grid size-12 place-items-center rounded-xl bg-emerald-50 text-emerald-700">{}</span><h3>Your first deployment starts here</h3><p>Deploy an app to this Docker host, then refresh to see its health and resource usage.</p><code>rootstock deploy &lt;name&gt;</code></div>"#, icon("stack")));
@@ -367,9 +414,27 @@ fn render(snapshot: &Snapshot, refresh: u64, inspect: Option<usize>) -> String {
     document(&content, refresh)
 }
 
-/// Serves the local console with read-only collection and URL-backed inspection state.
-pub fn serve(root: &Path, port: u16, refresh: u64) -> Result<()> {
-    let server = Server::http((Ipv4Addr::LOCALHOST, port)).map_err(anyhow::Error::msg)?;
+/// Serves read-only status with an optional public hostname behind an authenticated proxy.
+pub fn serve(root: &Path, port: u16, refresh: u64, public_host: Option<&str>) -> Result<()> {
+    if let Some(host) = public_host {
+        ensure!(
+            host.split('.').all(|label| {
+                !label.is_empty()
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            }),
+            "public host must be a hostname without a scheme, path, or port"
+        );
+    }
+    let bind = if public_host.is_some() {
+        Ipv4Addr::UNSPECIFIED
+    } else {
+        Ipv4Addr::LOCALHOST
+    };
+    let server = Server::http((bind, port)).map_err(anyhow::Error::msg)?;
     let address = server
         .server_addr()
         .to_ip()
@@ -389,7 +454,11 @@ pub fn serve(root: &Path, port: u16, refresh: u64) -> Result<()> {
             .and_then(|value| value.parse::<usize>().ok());
         let (code, body) = if host != address.to_string()
             && host != format!("localhost:{}", address.port())
-        {
+            && host != format!("127.0.0.1:{}", address.port())
+            && !public_host.is_some_and(|allowed| {
+                host.eq_ignore_ascii_case(allowed)
+                    || host.eq_ignore_ascii_case(&format!("{allowed}:443"))
+            }) {
             (400, "Unexpected Host header".to_string())
         } else if request.method() != &Method::Get {
             (405, "Only GET is supported".to_string())

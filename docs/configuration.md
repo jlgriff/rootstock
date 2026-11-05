@@ -9,8 +9,10 @@
 | `apps/<name>/compose.yml` | Your application's deployment definition | No |
 | `apps/<name>/.env` | Image reference, domain, and Compose interpolation settings | No |
 | `apps/<name>/rootstock.toml` | Enabled Compose profiles, if needed | No |
+| `apps/rootstock.toml` | Optional display names keyed by Compose project identifier | No |
 | `.env` and `.env.*` | Local environment settings at any directory level | No |
 | `infra/Pulumi.yaml` | Infrastructure program definition | Yes |
+| `infra/.env.example` | Generic cloud backend bootstrap settings | Yes |
 | `infra/Pulumi.example.yaml` | Generic stack configuration template | Yes |
 | `infra/Pulumi.aws.example.yaml` | Generic AWS stack configuration template | Yes |
 | `infra/cloud-init.sh` | Shared Ubuntu/Docker bootstrap for both providers | Yes |
@@ -38,6 +40,7 @@ and use `target/release/rootstock`. `--help` and `--version` are available.
 | `observe` | Serves a local browser view that queries the selected Docker host |
 | `observe --port <port>` | Local loopback HTTP port; defaults to `8787`; `0` selects an available port |
 | `observe --refresh <seconds>` | Browser refresh interval; defaults to `10`; minimum `1` |
+| `observe --public-host <hostname>` | Enables an all-IPv4 listener for an authenticated reverse proxy; adds that hostname and its `:443` form to accepted Host headers |
 | `deploy <name>` | Validates the whole inventory, then deploys one application |
 | `deploy <name> --dry-run` | Resolves configuration and prints the command without starting containers |
 
@@ -55,9 +58,33 @@ The optional [MCP adapter](mcp.md) is a separate binary and reuses the same inve
 status collector, and deployment planner. Its tools and the console's HTTP route have an
 [API reference](api.md), including machine-readable schemas and error contracts.
 
+### Display names
+
+Set display names in `rootstock.toml` at the inventory root selected by `--apps`:
+
+```toml
+[names]
+rootstock-web = "Public website"
+rootstock-proxy = "Shared proxy"
+```
+
+Each key is the full, existing Compose project identifier. The browser and `status` table use
+the configured name; JSON and MCP snapshots expose it as `display_name`. Without an entry,
+the display name defaults to the app name. Entries do not register applications or create projects.
+
+These names do not change inventory directory names, `deploy <name>` targets, MCP name filters,
+Compose projects, containers, networks, or volumes. Keep the existing inventory directory when
+renaming a display name. `list` and deployment plans continue to use the application identifier.
+The collector rereads this file for every snapshot, so a name change appears on the next browser
+refresh without restarting an application or dashboard.
+
+The file belongs on the machine running the collector: your workstation for local CLI/MCP use,
+or a read-only mount for the [hosted dashboard](hosted-dashboard.md#display-names). It contains
+display metadata only; keep credentials in their application-specific configuration.
+
 ### Profiles
 
-An optional `rootstock.toml` has one supported setting:
+An optional `rootstock.toml` inside an application's directory configures its Compose profiles:
 
 ```toml
 profiles = ["prod"]
@@ -164,8 +191,15 @@ ACME_EMAIL=admin@example.com DOCKER_HOST=ssh://deploy@host.example.com \
 
 Create the network only once. Permit inbound TCP ports 80 and 443, plus SSH access for deployment.
 Point each domain's DNS A record at the server. Publish AAAA records only if IPv6 is configured and
-reachable. The proxy redirects HTTP to HTTPS and stores ACME state in its own `acme` Docker volume;
-retain and back up that volume when maintaining the server.
+reachable. The proxy redirects HTTP to HTTPS. Traefik obtains free Let's Encrypt certificates for
+application routes using the `rootstock` resolver and renews them automatically before expiry.
+HTTP-01 validation requires public DNS to keep pointing at the host and port 80 to remain reachable;
+the HTTPS redirect is compatible with validation.
+
+Certificate management runs inside the proxy, independently of CI and cloud API credentials.
+Traefik stores its ACME account and certificates in the `acme` Docker volume; retain and back up that
+volume across proxy updates and host maintenance. External HTTPS and certificate-expiry monitoring
+can alert you if issuance or renewal fails.
 
 ### Migrate an existing Ferron host
 
@@ -216,11 +250,18 @@ volumes until the chosen deployment is verified.
 ### Optional cloud infrastructure
 
 Needs Node.js, npm, Pulumi, a state backend, provider credentials, and an uploaded SSH public key.
+The optional [backend bootstrap](bootstrap.md) finds or creates a private AWS S3 or DigitalOcean
+Spaces state bucket and supports manually triggered CI without committing deployment details.
 Select AWS with `rootstock:cloud=aws` or DigitalOcean with `rootstock:cloud=digitalocean` (the default
 for existing stacks). Only the chosen provider's host settings are required.
 
 For DigitalOcean, authenticate with `DIGITALOCEAN_TOKEN` or a secret `digitalocean:token` setting;
 see the [provider configuration](https://www.pulumi.com/registry/packages/digitalocean/).
+To use an existing DigitalOcean project, set `do:projectId` to its UUID from the console URL.
+The token needs `project:read` and `project:assign_resource` in addition to the host resource scopes.
+Rootstock assigns only its Droplet and reserved IP; it does not create, rename, or delete the project.
+Firewalls and SSH keys are managed outside project grouping. Projects group resources within a team;
+they do not restrict an API token to a particular project.
 For AWS, use your usual AWS credentials/profile or workload identity; `aws:region` selects the region.
 
 ```sh
@@ -239,12 +280,21 @@ match its `Pulumi.<stack>.yaml` filename. If you already use Pulumi, select your
 instead. Do not replace an existing stack's encryption metadata when adopting the example.
 
 ```sh
-pulumi config set --secret sshPrivateKey < ~/.ssh/id_ed25519
+pulumi config set rootstock:sshAgent true
+ssh-add ~/.ssh/id_ed25519
 pulumi preview
 pulumi up
 ```
 
-For an encrypted key, also set `pulumi config set --secret sshPrivateKeyPassphrase` interactively.
+Agent authentication uses the current `SSH_AUTH_SOCK` and keeps private key material out of provisioning
+resource inputs. Load the matching key into your local agent before provisioning; no agent is installed
+on the VM. On macOS, `/usr/bin/ssh-add --apple-use-keychain ~/.ssh/id_ed25519` also stores its passphrase
+in macOS Keychain. The encrypted private key file remains under `~/.ssh`; Keychain stores its passphrase.
+
+For provisioning without a local agent, set `rootstock:sshAgent` to `false` and run
+`pulumi config set --secret rootstock:sshPrivateKey < ~/.ssh/id_ed25519`. If that key is encrypted,
+also set `pulumi config set --secret rootstock:sshPrivateKeyPassphrase` interactively. This mode stores
+encrypted private key material in stack configuration and provisioning state.
 Review the preview before applying. Import/reconcile existing cloud resources instead of assuming
 a matching name adopts them. Stack files are ignored even when their secrets are encrypted.
 
@@ -254,20 +304,24 @@ a matching name adopts them. Stack files are ignored even when their secrets are
 | `rootstock:hostName` | AWS: yes | Resource name; defaults to `do:dropletName` on DigitalOcean; changing it can replace resources |
 | `rootstock:sshCidr` | No | IPv4 CIDR permitted on TCP 22; defaults to `0.0.0.0/0` for existing-stack compatibility; samples require replacing a reserved CIDR |
 | `rootstock:sshUsername` | No | SSH bootstrap user; defaults to `ubuntu` on AWS and `root` on DigitalOcean; must support passwordless sudo |
-| `rootstock:sshPrivateKey` | Yes, secret | Private key used by provisioning commands |
-| `rootstock:sshPrivateKeyPassphrase` | Optional secret | Passphrase for the private key |
+| `rootstock:sshAgent` | No | Use the local agent at `SSH_AUTH_SOCK`, omitting private key inputs; defaults to `false` for existing-stack compatibility |
+| `rootstock:sshPrivateKey` | Unless `sshAgent=true`, secret | Private key used by provisioning commands |
+| `rootstock:sshPrivateKeyPassphrase` | Optional secret | Passphrase for the private key; ignored in agent mode |
 | `rootstock:acmeEmail` | Yes | ACME account contact email for hosted domains |
 | `do:region` | DigitalOcean: yes | Region slug |
 | `do:dropletSize` | DigitalOcean: yes | Droplet size slug; example sizing is not a measured capacity guarantee |
+| `do:image` | No | OS image slug or ID for new DigitalOcean hosts; defaults to `ubuntu-24-04-x64`; `debian-13-x64` is also supported; ignored for existing hosts |
 | `do:dropletName` | DigitalOcean: unless `hostName` is set | Existing resource name, retained for compatibility |
+| `do:projectId` | No | Existing DigitalOcean project UUID for this stack's Droplet and reserved IP; unset uses the account's default project placement |
 | `do:sshKeyFingerprints` | DigitalOcean: yes | Comma-separated uploaded key fingerprints; surrounding whitespace is trimmed |
 | `aws:region` | AWS: configure here or in your AWS environment | Region used by the standard Pulumi AWS provider |
 | `ec2:instanceType` | AWS: yes | x86-64 EC2 instance type, such as `t3.micro`; ARM instance types are not supported by the current AMI |
 | `ec2:keyName` | AWS: yes | Existing EC2 key-pair name in the selected region |
 | `ec2:rootVolumeSize` | No | AWS encrypted gp3 root disk size in GiB; defaults to `20` |
 
-Both adapters provision Ubuntu 24.04 x86-64, run the same Docker bootstrap with a 2 GB swap file,
-and install the same proxy in `/srv/rootstock/proxy`. Bootstrap uses sudo, an SSH dial error limit
+Both adapters default to Ubuntu 24.04 x86-64. DigitalOcean also supports Debian through `do:image`.
+They run the same Docker bootstrap with a 2 GB swap file and install the same proxy in
+`/srv/rootstock/proxy`. Bootstrap uses sudo, an SSH dial error limit
 of 30, and adds the SSH user to the Docker group; subsequent release commands use that account
 without sudo. Cloud-init, image, and uploaded-key changes do not replace an existing VM; update
 the OS separately. Proxy Compose changes do trigger a fresh `compose up`.
@@ -295,9 +349,10 @@ switch DNS. Docker volumes survive container releases but are host-local and do 
 loss without backups. Rootstock does not provision app-specific object storage, copy volumes,
 or translate storage consistency/locking semantics between providers.
 
-`npm test` in `infra/` exercises both real stack branches with Pulumi's mock resource monitor.
-It checks the shared SSH output, provider isolation, bootstrap, and SSH firewall settings without
-creating resources. It does not replace an authenticated preview or a live provisioning rehearsal.
+`npm test` in `infra/` exercises both real stack branches with Pulumi's mock resource monitor and
+backend bootstrap against simulated SDK/API boundaries. It checks provider isolation, SSH settings,
+backend ownership, repeat runs, and temporary-key cleanup without creating resources. It does not
+replace an authenticated preview or a live provisioning rehearsal.
 
 ### Proxy configuration
 
@@ -407,6 +462,38 @@ limit is the container's limit or the Docker host's memory when unrestricted. It
 memory. Stopped containers and missing samples have unavailable metrics rather than zero.
 Container memory does not include all host overhead.
 
+Host memory comes from Linux `/proc/meminfo`, read over the selected Docker endpoint's SSH
+connection or directly for a native Linux engine using a Unix socket. SSH uses your existing
+keys and configuration, noninteractive authentication, and a five-second connection timeout.
+The host must permit `cat /proc/meminfo` in addition to Docker socket access. No sudo, agent,
+helper container, or extra VM service is required. SSH URIs with a custom Docker socket path are
+unsupported for host counters. Use direct reads only when the client and Docker daemon share
+the same Linux host.
+
+For local macOS Docker Unix sockets and recognized OrbStack/Docker Desktop sockets on Linux,
+Rootstock automatically reads `/proc/meminfo` through a running Rootstock `socket-proxy` service.
+It uses `docker exec <proxy-id> cat /proc/meminfo` with the selected Docker context; it never
+creates a helper container or executes commands inside application services. This requires
+Docker exec access to the infrastructure proxy. If it is not running, host memory remains
+unavailable with an explanation. These are the Linux VM's figures, not macOS memory or the
+hypervisor process's footprint.
+
+`ROOTSTOCK_HOST_MEMINFO` overrides the counter source with an explicit file path on the client.
+It takes precedence over SSH, local VM, and native Linux reads. A missing or invalid override is reported
+as unavailable rather than falling back to a different host. The
+[hosted dashboard template](hosted-dashboard.md) uses this with a read-only host bind mount;
+it requires no additional socket-proxy permissions. Remote TCP connections without an explicit
+counter file remain unsupported for host memory.
+
+Host used memory is `MemTotal - MemAvailable`, matching the kernel's estimate of RAM unavailable
+without swapping. Available memory includes reclaimable cache. Cache and buffers are
+`Cached + Buffers + SReclaimable`; this overlaps the used and available figures and must not be
+added to them. Swap usage is `SwapTotal - SwapFree`. These host values include all workloads,
+Docker, the OS, and kernel overhead, while container totals cover only discovered Rootstock
+containers. Host and container memory are overlapping measurements, not additive categories.
+Missing counters or a failed host read leave container status available and expose
+`host_memory_error` in JSON and MCP. The console marks host memory unavailable instead of showing zero.
+
 `observe` prints `http://127.0.0.1:<port>/` and stays running on the client until Ctrl-C. Open that
 URL locally. It binds only to IPv4 loopback, accepts localhost/loopback Host headers, and adds no
 public route or browser password gate to deployed apps. Each page load collects a fresh snapshot;
@@ -417,9 +504,15 @@ No previous snapshot is presented as current after a failed collection.
 The page uses compiled Tailwind CSS and server-rendered HTML, with no JavaScript, external assets, database,
 or metrics history. Responses disable browser caching. Only selected status fields reach the page
 or JSON output; container environments, complete labels, mounts, and credentials are excluded.
-The collector issues read-only `ps`, `inspect`, `stats`, and local `context inspect` calls. It performs no app lifecycle
-actions. No dashboard container, agent, Rust runtime, or extra port is installed on the serving VM;
-active queries briefly use its existing Docker/SSH infrastructure.
+The collector issues read-only `ps`, `inspect`, `stats`, and local `context inspect` calls,
+plus a host memory read where supported. Local VM reads briefly execute the fixed read-only
+command in infrastructure; they perform no app lifecycle actions.
+The default local console installs no container, agent, Rust runtime, or extra port on the serving
+VM; active queries briefly use its existing Docker/SSH infrastructure.
+
+For an optional resident console on your own subdomain, use the
+[password-protected hosted dashboard](hosted-dashboard.md). It keeps the same read-only
+data contract and requires no changes to public applications' authentication.
 
 ### Styling the console
 

@@ -47,17 +47,28 @@ case "$1" in
   ps) cat "$FIXTURE_DIRECTORY/ps" ;;
   context) printf '"%s"\n' "${FIXTURE_DOCKER_ENDPOINT:-unix:///example/docker.sock}" ;;
   inspect) cat "$FIXTURE_DIRECTORY/inspect.json" ;;
+  exec)
+    printf '%s\n' "$@" > "$FIXTURE_DIRECTORY/exec-args"
+    [ "$2" = "proxy-id" ] && [ "$3" = "cat" ] && [ "$4" = "/proc/meminfo" ] || exit 1
+    cat "$FIXTURE_DIRECTORY/meminfo" ;;
   stats) printf '%s\n' '{"ID":"web-id","MemUsage":"4MiB / 1GiB","CPUPerc":"0.25%"}' ;;
   *) echo "unexpected Docker command: $*" >&2; exit 1 ;;
 esac
 "#,
         )
         .unwrap();
-        fs::set_permissions(
-            directory.path().join("docker"),
-            fs::Permissions::from_mode(0o755),
+        fs::write(
+            directory.path().join("ssh"),
+            "#!/bin/sh\necho 'Host memory unavailable in this fixture' >&2\nexit 1\n",
         )
         .unwrap();
+        for program in ["docker", "ssh"] {
+            fs::set_permissions(
+                directory.path().join(program),
+                fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
         Self { directory }
     }
 
@@ -73,10 +84,24 @@ esac
             .env("PATH", path)
             .env_remove("DOCKER_HOST")
             .env_remove("DOCKER_CONTEXT")
+            .env_remove("ROOTSTOCK_HOST_MEMINFO")
             .env("FIXTURE_DIRECTORY", self.directory.path())
             .arg("--apps")
             .arg(self.directory.path().join("apps"));
+        if self.directory.path().join("meminfo").exists() {
+            command.env("DOCKER_HOST", "ssh://operator@host.example.test:2222");
+        }
         command
+    }
+
+    /// Supplies host counters over a synthetic SSH connection without accessing a real host.
+    fn host_memory(&self, contents: &str) {
+        fs::write(self.directory.path().join("meminfo"), contents).unwrap();
+        fs::write(
+            self.directory.path().join("ssh"),
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FIXTURE_DIRECTORY/ssh-args\"\ncat \"$FIXTURE_DIRECTORY/meminfo\"\n",
+        )
+        .unwrap();
     }
 
     /// Keeps synthetic discovery aligned with the inspected container set.
@@ -105,9 +130,15 @@ esac
 
     /// Requests a browser view from a disposable local dashboard process.
     fn page(&self, path: &str) -> String {
+        self.request(path, &[], None)
+    }
+
+    /// Exercises an explicit listener mode and Host header without leaving a server running.
+    fn request(&self, path: &str, arguments: &[&str], host: Option<&str>) -> String {
         let child = self
             .command()
             .args(["observe", "--port", "0", "--refresh", "30"])
+            .args(arguments)
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
@@ -117,22 +148,21 @@ esac
         BufReader::new(server.0.stdout.take().unwrap())
             .read_line(&mut line)
             .unwrap();
-        assert!(
-            line.starts_with("http://127.0.0.1:"),
-            "missing loopback URL: {line}"
-        );
+        assert!(line.starts_with("http://"), "missing listener URL: {line}");
         let address = line
             .trim()
             .strip_prefix("http://")
             .unwrap()
-            .trim_end_matches('/');
-        let mut stream = TcpStream::connect(address).unwrap();
+            .trim_end_matches('/')
+            .replace("0.0.0.0", "127.0.0.1");
+        let mut stream = TcpStream::connect(&address).unwrap();
         stream
             .set_read_timeout(Some(std::time::Duration::from_secs(5)))
             .unwrap();
         write!(
             stream,
-            "GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
+            "GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+            host.unwrap_or(&address)
         )
         .unwrap();
         let mut response = String::new();
@@ -149,6 +179,286 @@ impl Drop for Server {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+const MEMINFO: &str = "MemTotal: 1048576 kB\nMemFree: 131072 kB\nMemAvailable: 655360 kB\nBuffers: 16384 kB\nCached: 262144 kB\nSReclaimable: 16384 kB\nSwapTotal: 2097152 kB\nSwapFree: 2031616 kB\n";
+
+/// Renames live deployments without changing their identity or requiring local app definitions.
+#[test]
+fn display_names_are_configuration_without_deployment_migration() {
+    for configured in [true, false] {
+        let fixture = Fixture::new();
+        if !configured {
+            fs::remove_dir_all(fixture.directory.path().join("apps/web")).unwrap();
+        }
+        let settings = fixture.directory.path().join("apps/rootstock.toml");
+        for name in ["Public <Web>", "Main page"] {
+            fs::write(
+                &settings,
+                format!("[names]\nrootstock-web = {name:?}\nrootstock-absent = \"Absent\"\n"),
+            )
+            .unwrap();
+            let output = fixture
+                .command()
+                .args(["status", "--json"])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(snapshot["apps"].as_array().unwrap().len(), 1);
+            let app = &snapshot["apps"][0];
+            assert_eq!(app["display_name"], name);
+            assert_eq!(app["name"], "web");
+            assert_eq!(app["project"], "rootstock-web");
+            assert_eq!(app["configured"], configured);
+            assert_eq!(app["services"].as_array().unwrap().len(), 2);
+            let page = fixture.page("/");
+            assert!(page.starts_with("HTTP/1.1 200"), "{page}");
+            assert!(page.contains(&name.replace('<', "&lt;").replace('>', "&gt;")));
+            assert!(page.contains("rootstock-web"));
+            assert!(!page.contains("Public <Web>"));
+            let table = fixture.command().arg("status").output().unwrap();
+            assert!(table.status.success());
+            assert!(String::from_utf8_lossy(&table.stdout).contains(name));
+        }
+    }
+}
+
+/// Makes malformed display settings actionable instead of silently showing an inferred name.
+#[test]
+fn invalid_display_names_report_the_configuration_file() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.directory.path().join("apps/rootstock.toml"),
+        "names = [",
+    )
+    .unwrap();
+    let output = fixture.command().arg("status").output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("apps/rootstock.toml"));
+}
+
+/// Reads desktop VM counters from infrastructure without executing inside an application.
+#[test]
+fn desktop_vm_memory_uses_the_running_rootstock_socket_proxy() {
+    for endpoint in [
+        "unix:///example/.orbstack/run/docker.sock",
+        "unix:///example/.docker/desktop/docker.sock",
+    ] {
+        let fixture = Fixture::new();
+        fixture.host_memory(MEMINFO);
+        let path = fixture.directory.path().join("inspect.json");
+        let mut containers: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        containers.as_array_mut().unwrap().push(serde_json::json!({
+            "Id": "proxy-id", "Name": "/example-proxy-socket-proxy", "RestartCount": 0,
+            "Config": {"Labels": {"com.docker.compose.project": "rootstock-proxy", "com.docker.compose.service": "socket-proxy"}},
+            "State": {"Status": "running", "Running": true, "StartedAt": "2026-01-01T00:00:00Z"},
+            "NetworkSettings": {"Ports": null}
+        }));
+        fixture.containers(&containers);
+        let output = fixture
+            .command()
+            .env("DOCKER_HOST", endpoint)
+            .args(["status", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(snapshot["host_memory"]["total_bytes"], 1024_u64.pow(3));
+        assert_eq!(
+            snapshot["host_memory"]["available_bytes"],
+            640 * 1024_u64.pow(2)
+        );
+        assert!(snapshot["host_memory_error"].is_null());
+        let arguments = fs::read_to_string(fixture.directory.path().join("exec-args")).unwrap();
+        assert_eq!(
+            arguments.lines().collect::<Vec<_>>(),
+            ["exec", "proxy-id", "cat", "/proc/meminfo"]
+        );
+        assert!(!fixture.directory.path().join("ssh-args").exists());
+    }
+}
+
+/// Keeps application visibility when local VM infrastructure is not running.
+#[test]
+fn desktop_vm_memory_without_a_proxy_explains_the_missing_source() {
+    let fixture = Fixture::new();
+    let output = fixture
+        .command()
+        .env("DOCKER_HOST", "unix:///example/.orbstack/run/docker.sock")
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(snapshot["host_memory"].is_null());
+    assert!(
+        snapshot["host_memory_error"]
+            .as_str()
+            .unwrap()
+            .contains("running Rootstock socket proxy")
+    );
+    assert_eq!(snapshot["apps"][0]["services"][0]["memory"], "4MiB / 1GiB");
+    assert!(!fixture.directory.path().join("exec-args").exists());
+}
+
+/// Allows only the configured public hostname while retaining loopback healthchecks.
+#[test]
+fn hosted_dashboard_accepts_its_public_host_and_rejects_other_hosts() {
+    let fixture = Fixture::new();
+    let arguments = ["--public-host", "dashboard.example.com"];
+    let page = fixture.request("/", &arguments, Some("dashboard.example.com"));
+    assert!(page.starts_with("HTTP/1.1 200"), "{page}");
+    assert!(page.contains("Container memory"));
+    let favicon = fixture.request(
+        "/favicon.svg",
+        &arguments,
+        Some("dashboard.example.com:443"),
+    );
+    assert!(favicon.starts_with("HTTP/1.1 200"), "{favicon}");
+    assert!(favicon.contains("image/svg+xml"));
+    let unknown = fixture.request("/", &arguments, Some("other.example.com"));
+    assert!(unknown.starts_with("HTTP/1.1 400"), "{unknown}");
+    assert!(
+        fixture
+            .request("/favicon.svg", &arguments, None)
+            .starts_with("HTTP/1.1 200")
+    );
+}
+
+/// Refuses URLs and malformed names before opening a hosted listener.
+#[test]
+fn hosted_dashboard_requires_a_hostname_without_a_scheme_or_path() {
+    let fixture = Fixture::new();
+    let output = fixture
+        .command()
+        .args(["observe", "--public-host", "https://dashboard.example.com/"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("hostname"));
+    assert!(output.stdout.is_empty());
+}
+
+/// Reads explicitly mounted host counters when the Docker engine uses a private TCP proxy.
+#[test]
+fn hosted_dashboard_reads_a_mounted_host_meminfo_file() {
+    let fixture = Fixture::new();
+    fixture.host_memory(MEMINFO);
+    let output = fixture
+        .command()
+        .env("DOCKER_HOST", "tcp://socket-proxy:2375")
+        .env(
+            "ROOTSTOCK_HOST_MEMINFO",
+            fixture.directory.path().join("meminfo"),
+        )
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(snapshot["host_memory"]["total_bytes"], 1024_u64.pow(3));
+    assert!(snapshot["host_memory_error"].is_null());
+    assert!(!fixture.directory.path().join("ssh-args").exists());
+}
+
+/// Separates host capacity from container usage and follows Docker context precedence.
+#[test]
+fn host_memory_uses_available_ram_on_the_selected_ssh_host() {
+    let fixture = Fixture::new();
+    fixture.host_memory(MEMINFO);
+    let output = fixture
+        .command()
+        .env("DOCKER_CONTEXT", "remote")
+        .env("DOCKER_HOST", "unix:///ignored/docker.sock")
+        .env(
+            "FIXTURE_DOCKER_ENDPOINT",
+            "ssh://operator@host.example.test:2222",
+        )
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let memory = &snapshot["host_memory"];
+    assert_eq!(memory["total_bytes"], 1024_u64.pow(3));
+    assert_eq!(memory["used_bytes"], 384 * 1024_u64.pow(2));
+    assert_eq!(memory["available_bytes"], 640 * 1024_u64.pow(2));
+    assert_eq!(memory["cache_and_buffers_bytes"], 288 * 1024_u64.pow(2));
+    assert_eq!(memory["swap_total_bytes"], 2 * 1024_u64.pow(3));
+    assert_eq!(memory["swap_used_bytes"], 64 * 1024_u64.pow(2));
+    assert!(snapshot["host_memory_error"].is_null());
+    let arguments = fs::read_to_string(fixture.directory.path().join("ssh-args")).unwrap();
+    assert_eq!(
+        arguments.lines().collect::<Vec<_>>(),
+        [
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
+            "--",
+            "ssh://operator@host.example.test:2222",
+            "cat /proc/meminfo",
+        ]
+    );
+}
+
+/// Makes host memory, cache, and swap visible without relabelling container totals.
+#[test]
+fn dashboard_shows_host_memory_separately_from_container_memory() {
+    let fixture = Fixture::new();
+    fixture.host_memory(MEMINFO);
+    let page = fixture.page("/");
+    for expected in [
+        "Host memory",
+        "384.0 MiB",
+        "640.0 MiB",
+        "Cache and buffers",
+        "288.0 MiB",
+        "Swap",
+        "64.0 MiB",
+        "Container memory",
+        "4.0 MiB",
+    ] {
+        assert!(page.contains(expected), "missing {expected}");
+    }
+}
+
+/// Preserves container visibility when host counters are missing or invalid.
+#[test]
+fn invalid_host_memory_is_unavailable_without_hiding_containers() {
+    let fixture = Fixture::new();
+    fixture.host_memory("MemTotal: 1048576 kB\n");
+    let output = fixture
+        .command()
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(snapshot["host_memory"].is_null());
+    assert!(
+        snapshot["host_memory_error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("MemAvailable")
+    );
+    assert_eq!(snapshot["apps"][0]["services"][0]["memory"], "4MiB / 1GiB");
+    let page = fixture.page("/");
+    assert!(page.contains("Host memory unavailable"));
+    assert!(page.contains("Container memory"));
 }
 
 /// Proves the live service contract preserves ports and excludes secrets and stopped metrics.
@@ -169,6 +479,7 @@ fn status_json_reports_live_services_without_resolving_local_compose() {
     let snapshot: Value = serde_json::from_str(&text).unwrap();
     let app = &snapshot["apps"][0];
     assert_eq!(app["name"], "web");
+    assert_eq!(app["display_name"], "web");
     assert_eq!(app["configured"], true);
     let web = &app["services"][0];
     assert_eq!(web["service"], "web");

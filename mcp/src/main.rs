@@ -155,7 +155,7 @@ impl RootstockServer {
 
     /// Reuses the dashboard collector and optionally narrows its selected status fields to one app.
     #[tool(
-        description = "Read live container state, domains, ports, uptime, restarts, memory, and CPU from the selected Docker host. Does not probe public reachability.",
+        description = "Read live container state, domains, ports, uptime, restarts, memory, and CPU, plus host memory and swap where supported. Does not probe public reachability.",
         output_schema = schema_for_output::<Response<status::Snapshot>>(),
         annotations(
             read_only_hint = true,

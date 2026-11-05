@@ -118,7 +118,7 @@ an empty `services` array. Live `rootstock-` projects absent from local registra
 
 | Argument | Type | Required? | Meaning |
 | --- | --- | --- | --- |
-| `name` | string or `null` | No | Exact app name; omit or use `null` for every deployment |
+| `name` | string or `null` | No | Exact app identifier, independent of display name; omit or use `null` for every deployment |
 
 ```json
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_status","arguments":{"name":"web"}}}
@@ -217,8 +217,18 @@ Example snapshot:
 ```json
 {
   "captured_at": "2026-01-01T12:00:00Z",
+  "host_memory": {
+    "total_bytes": 1073741824,
+    "used_bytes": 402653184,
+    "available_bytes": 671088640,
+    "cache_and_buffers_bytes": 301989888,
+    "swap_total_bytes": 2147483648,
+    "swap_used_bytes": 67108864
+  },
+  "host_memory_error": null,
   "apps": [{
     "name": "web",
+    "display_name": "Public website",
     "project": "rootstock-web",
     "configured": true,
     "services": [{
@@ -244,8 +254,17 @@ Example snapshot:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `captured_at` | string | UTC RFC 3339 timestamp after collection; individual Docker reads are not atomic |
+| `host_memory` | object or `null` | Whole Linux host memory, collected independently of app filtering; `null` when unsupported or unavailable |
+| `host_memory_error` | string or `null` | Reason host memory could not be read; container status remains usable |
+| `host_memory.total_bytes` | nonnegative integer | Linux `MemTotal` converted from KiB to bytes |
+| `host_memory.used_bytes` | nonnegative integer | `MemTotal - MemAvailable`, in bytes; includes host overhead |
+| `host_memory.available_bytes` | nonnegative integer | Kernel estimate of memory available without swapping, including reclaimable cache |
+| `host_memory.cache_and_buffers_bytes` | nonnegative integer | `Cached + Buffers + SReclaimable`, in bytes; overlaps used and available memory |
+| `host_memory.swap_total_bytes` | nonnegative integer | Total configured swap, in bytes |
+| `host_memory.swap_used_bytes` | nonnegative integer | `SwapTotal - SwapFree`, in bytes |
 | `apps` | array | Deployments ordered by project; empty when none are found |
-| `apps[].name`, `project` | string | App name and full Compose project identifier |
+| `apps[].name`, `project` | string | Stable app name and full Compose project identifier; display configuration does not change them |
+| `apps[].display_name` | string | Configured human-readable name, falling back to `name`; shared by browser, CLI table, and MCP snapshots |
 | `apps[].configured` | boolean | Whether the project has a local inventory folder |
 | `apps[].services` | array | Containers ordered by service and container name |
 | `services[].service`, `container` | string | Compose service and Docker container name |
@@ -264,10 +283,16 @@ Example snapshot:
 | `services[].memory` | string or `null` | Docker-formatted memory usage and limit; `null` when unavailable |
 | `services[].cpu` | string or `null` | Docker-formatted CPU percentage; `null` when unavailable |
 
-`services[]` is nested under each `apps[]`; `ports[]` is nested under each service. Metrics are
-formatted strings, not byte counts. Stopped containers have unavailable resource samples. Limits
+`services[]` is nested under each `apps[]`; `ports[]` is nested under each service. Container metrics
+are formatted strings; host memory counters are byte counts. Stopped containers have unavailable resource samples. Limits
 are not reserved memory; container memory does not account for the whole VM. Domains and port
 metadata do not establish public reachability or prove that a process is listening.
+
+Host counters use the same collector in the CLI, HTML console, and MCP. They are read over SSH,
+directly for a native Linux engine, through Rootstock's socket proxy for local desktop VMs, or
+from an explicit counter file. Unsupported sources leave them unavailable. See the
+[host memory collection reference](configuration.md#live-status-and-local-dashboard) for access
+requirements and accounting details. Do not add host, container, and cache figures together.
 
 ### Browser links
 
@@ -311,7 +336,7 @@ MCP, with no JSON status route or mutation endpoints.
 | Parameter | Location | Required? | Meaning |
 | --- | --- | --- | --- |
 | `inspect` | query | No | Zero-based unsigned decimal deployment index in the current project-sorted snapshot; opens its container details |
-| `Host` | header | Yes | Exactly `127.0.0.1:<port>` or `localhost:<port>` |
+| `Host` | header | Yes | Loopback listener name; hosted mode also accepts its configured public hostname, optionally with `:443` |
 
 ```sh
 curl http://127.0.0.1:8787/
@@ -326,7 +351,8 @@ Each request collects fresh data. Automatic refresh retains the current URL and 
 | Status | Body | Meaning |
 | --- | --- | --- |
 | `200` | HTML overview | Collection succeeded, including an empty inventory/host |
-| `400` | `Unexpected Host header` | Host header is outside the accepted loopback names |
+| `400` | `Unexpected Host header` | Host header is outside the accepted listener names and configured public hostname |
+| `401` | Proxy authentication challenge | Hosted template requires a valid username and password before forwarding any request |
 | `404` | `Not found` | Unsupported path or query syntax |
 | `405` | `Only GET is supported` | Method is not GET, including HEAD |
 | `503` | HTML error view | Docker/SSH, collection, or local registration failed; connection diagnostics are expandable |
@@ -334,14 +360,16 @@ Each request collects fresh data. Automatic refresh retains the current URL and 
 The Host check runs before method and path checks. Responses set `Content-Type: text/html;
 charset=utf-8`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, and the console's
 Content Security Policy. No CORS access is advertised. Assets are embedded; no external asset
-requests or browser JavaScript are needed. HTTP authentication is not implemented; access is
-restricted by the loopback listener and Host check. Reads use the operator's configured Docker/SSH
-credentials. The console adds no public proxy route.
+requests or browser JavaScript are needed. The default listener is restricted to loopback and
+validates Host headers. The [hosted template](hosted-dashboard.md) adds a public hostname behind
+Traefik's HTTPS and Basic authentication; it publishes no backend port and strips the Authorization
+header before forwarding. The Rust server itself does not authenticate requests. Reads use the
+selected Docker connection, with an explicit mounted counter file available for host memory.
 
 ### `GET /favicon.svg`
 
-Returns the same embedded SVG used for the console's header logo. It requires the same loopback
-Host header as the overview. No query parameters are accepted.
+Returns the same embedded SVG used for the console's header logo. It accepts the same Host names
+and hosted proxy authentication as the overview. No query parameters are accepted.
 
 | Status | Content type | Meaning |
 | --- | --- | --- |

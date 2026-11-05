@@ -29,7 +29,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Serves an on-demand status page on local loopback.
+    /// Serves a status page locally or behind an authenticated reverse proxy.
     Observe {
         /// Local HTTP port; zero chooses an available port.
         #[arg(long, default_value_t = 8787)]
@@ -37,6 +37,9 @@ enum Command {
         /// Seconds between browser refreshes.
         #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
         refresh: u64,
+        /// Public hostname behind an authenticated proxy; enables an all-IPv4 listener.
+        #[arg(long)]
+        public_host: Option<String>,
     },
     /// Brings one application up under its own Compose project.
     Deploy {
@@ -118,7 +121,11 @@ fn main() -> Result<()> {
                 print!("{}", status::table(&snapshot));
             }
         }
-        Command::Observe { port, refresh } => dashboard::serve(&cli.apps, port, refresh)?,
+        Command::Observe {
+            port,
+            refresh,
+            public_host,
+        } => dashboard::serve(&cli.apps, port, refresh, public_host.as_deref())?,
     }
     Ok(())
 }
