@@ -45,7 +45,8 @@ DOCKER_HOST=ssh://deploy@host.example.com cargo run -- observe
 ```
 
 `status` shows live services, domains, internal and published ports, health, uptime, RAM, and CPU.
-SSH-connected Linux hosts also show whole-host memory, available RAM, cache, and swap.
+SSH-connected Linux hosts and local OrbStack/Docker Desktop VMs with Rootstock's socket proxy
+also show whole-host memory, available RAM, cache, and swap.
 The browser console provides app links; `status --json` and MCP include the same derived URLs.
 `observe` prints a local browser URL with the same information and refreshes every ten seconds.
 Stop it with Ctrl-C. Both use your selected Docker host; the browser view adds no service to the VM.

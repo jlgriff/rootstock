@@ -238,6 +238,7 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
         .filter(|(_, project)| project.starts_with(inventory::PROJECT_PREFIX))
         .map(|(id, _)| id)
         .collect();
+    let mut memory_proxy = None;
     if !ids.is_empty() {
         let mut args = vec!["inspect"];
         args.extend(&ids);
@@ -280,6 +281,13 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
             else {
                 continue;
             };
+            if container.state.running
+                && labels
+                    .get("com.docker.compose.service")
+                    .is_some_and(|service| service == "socket-proxy")
+            {
+                memory_proxy.get_or_insert_with(|| container.id.clone());
+            }
             let app = apps.entry(project.clone()).or_insert_with(|| AppStatus {
                 name: project
                     .strip_prefix(inventory::PROJECT_PREFIX)
@@ -297,10 +305,11 @@ pub fn collect(root: &Path) -> Result<Snapshot> {
         app.services
             .sort_by(|a, b| (&a.service, &a.container).cmp(&(&b.service, &b.container)));
     }
-    let (host_memory, host_memory_error) = match endpoint.and_then(|host| memory::collect(&host)) {
-        Ok(memory) => (Some(memory), None),
-        Err(error) => (None, Some(format!("{error:#}"))),
-    };
+    let (host_memory, host_memory_error) =
+        match endpoint.and_then(|host| memory::collect(&host, memory_proxy.as_deref())) {
+            Ok(memory) => (Some(memory), None),
+            Err(error) => (None, Some(format!("{error:#}"))),
+        };
     Ok(Snapshot {
         captured_at: OffsetDateTime::now_utc().format(&Rfc3339)?,
         host_memory,

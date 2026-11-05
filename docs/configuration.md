@@ -442,15 +442,23 @@ connection or directly for a native Linux engine using a Unix socket. SSH uses y
 keys and configuration, noninteractive authentication, and a five-second connection timeout.
 The host must permit `cat /proc/meminfo` in addition to Docker socket access. No sudo, agent,
 helper container, or extra VM service is required. SSH URIs with a custom Docker socket path are
-unsupported for host counters. Other transports, including local Docker Desktop or OrbStack on
-macOS and remote TCP engines, show host memory as unavailable; they never substitute macOS RAM.
-Use direct reads only when the client and Docker daemon share the same Linux host.
+unsupported for host counters. Use direct reads only when the client and Docker daemon share
+the same Linux host.
+
+For local macOS Docker Unix sockets and recognized OrbStack/Docker Desktop sockets on Linux,
+Rootstock automatically reads `/proc/meminfo` through a running Rootstock `socket-proxy` service.
+It uses `docker exec <proxy-id> cat /proc/meminfo` with the selected Docker context; it never
+creates a helper container or executes commands inside application services. This requires
+Docker exec access to the infrastructure proxy. If it is not running, host memory remains
+unavailable with an explanation. These are the Linux VM's figures, not macOS memory or the
+hypervisor process's footprint.
 
 `ROOTSTOCK_HOST_MEMINFO` overrides the counter source with an explicit file path on the client.
-It takes precedence over SSH and native Linux reads. A missing or invalid override is reported
+It takes precedence over SSH, local VM, and native Linux reads. A missing or invalid override is reported
 as unavailable rather than falling back to a different host. The
 [hosted dashboard template](hosted-dashboard.md) uses this with a read-only host bind mount;
-it requires no additional socket-proxy permissions.
+it requires no additional socket-proxy permissions. Remote TCP connections without an explicit
+counter file remain unsupported for host memory.
 
 Host used memory is `MemTotal - MemAvailable`, matching the kernel's estimate of RAM unavailable
 without swapping. Available memory includes reclaimable cache. Cache and buffers are
@@ -472,7 +480,8 @@ The page uses compiled Tailwind CSS and server-rendered HTML, with no JavaScript
 or metrics history. Responses disable browser caching. Only selected status fields reach the page
 or JSON output; container environments, complete labels, mounts, and credentials are excluded.
 The collector issues read-only `ps`, `inspect`, `stats`, and local `context inspect` calls,
-plus a host memory read where supported. It performs no app lifecycle actions.
+plus a host memory read where supported. Local VM reads briefly execute the fixed read-only
+command in infrastructure; they perform no app lifecycle actions.
 The default local console installs no container, agent, Rust runtime, or extra port on the serving
 VM; active queries briefly use its existing Docker/SSH infrastructure.
 

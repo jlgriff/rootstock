@@ -286,8 +286,9 @@ are formatted strings; host memory counters are byte counts. Stopped containers 
 are not reserved memory; container memory does not account for the whole VM. Domains and port
 metadata do not establish public reachability or prove that a process is listening.
 
-Host counters use the same collector in the CLI, HTML console, and MCP. They are read over SSH or
-directly for a native Linux engine; unsupported transports leave them unavailable. See the
+Host counters use the same collector in the CLI, HTML console, and MCP. They are read over SSH,
+directly for a native Linux engine, through Rootstock's socket proxy for local desktop VMs, or
+from an explicit counter file. Unsupported sources leave them unavailable. See the
 [host memory collection reference](configuration.md#live-status-and-local-dashboard) for access
 requirements and accounting details. Do not add host, container, and cache figures together.
 

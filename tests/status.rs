@@ -47,6 +47,10 @@ case "$1" in
   ps) cat "$FIXTURE_DIRECTORY/ps" ;;
   context) printf '"%s"\n' "${FIXTURE_DOCKER_ENDPOINT:-unix:///example/docker.sock}" ;;
   inspect) cat "$FIXTURE_DIRECTORY/inspect.json" ;;
+  exec)
+    printf '%s\n' "$@" > "$FIXTURE_DIRECTORY/exec-args"
+    [ "$2" = "proxy-id" ] && [ "$3" = "cat" ] && [ "$4" = "/proc/meminfo" ] || exit 1
+    cat "$FIXTURE_DIRECTORY/meminfo" ;;
   stats) printf '%s\n' '{"ID":"web-id","MemUsage":"4MiB / 1GiB","CPUPerc":"0.25%"}' ;;
   *) echo "unexpected Docker command: $*" >&2; exit 1 ;;
 esac
@@ -178,6 +182,74 @@ impl Drop for Server {
 }
 
 const MEMINFO: &str = "MemTotal: 1048576 kB\nMemFree: 131072 kB\nMemAvailable: 655360 kB\nBuffers: 16384 kB\nCached: 262144 kB\nSReclaimable: 16384 kB\nSwapTotal: 2097152 kB\nSwapFree: 2031616 kB\n";
+
+/// Reads desktop VM counters from infrastructure without executing inside an application.
+#[test]
+fn desktop_vm_memory_uses_the_running_rootstock_socket_proxy() {
+    for endpoint in [
+        "unix:///example/.orbstack/run/docker.sock",
+        "unix:///example/.docker/desktop/docker.sock",
+    ] {
+        let fixture = Fixture::new();
+        fixture.host_memory(MEMINFO);
+        let path = fixture.directory.path().join("inspect.json");
+        let mut containers: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        containers.as_array_mut().unwrap().push(serde_json::json!({
+            "Id": "proxy-id", "Name": "/example-proxy-socket-proxy", "RestartCount": 0,
+            "Config": {"Labels": {"com.docker.compose.project": "rootstock-proxy", "com.docker.compose.service": "socket-proxy"}},
+            "State": {"Status": "running", "Running": true, "StartedAt": "2026-01-01T00:00:00Z"},
+            "NetworkSettings": {"Ports": null}
+        }));
+        fixture.containers(&containers);
+        let output = fixture
+            .command()
+            .env("DOCKER_HOST", endpoint)
+            .args(["status", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(snapshot["host_memory"]["total_bytes"], 1024_u64.pow(3));
+        assert_eq!(
+            snapshot["host_memory"]["available_bytes"],
+            640 * 1024_u64.pow(2)
+        );
+        assert!(snapshot["host_memory_error"].is_null());
+        let arguments = fs::read_to_string(fixture.directory.path().join("exec-args")).unwrap();
+        assert_eq!(
+            arguments.lines().collect::<Vec<_>>(),
+            ["exec", "proxy-id", "cat", "/proc/meminfo"]
+        );
+        assert!(!fixture.directory.path().join("ssh-args").exists());
+    }
+}
+
+/// Keeps application visibility when local VM infrastructure is not running.
+#[test]
+fn desktop_vm_memory_without_a_proxy_explains_the_missing_source() {
+    let fixture = Fixture::new();
+    let output = fixture
+        .command()
+        .env("DOCKER_HOST", "unix:///example/.orbstack/run/docker.sock")
+        .args(["status", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let snapshot: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(snapshot["host_memory"].is_null());
+    assert!(
+        snapshot["host_memory_error"]
+            .as_str()
+            .unwrap()
+            .contains("running Rootstock socket proxy")
+    );
+    assert_eq!(snapshot["apps"][0]["services"][0]["memory"], "4MiB / 1GiB");
+    assert!(!fixture.directory.path().join("exec-args").exists());
+}
 
 /// Allows only the configured public hostname while retaining loopback healthchecks.
 #[test]

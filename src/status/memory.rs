@@ -3,10 +3,10 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
-use super::HostMemory;
+use super::{HostMemory, docker};
 
-/// Reads Linux host counters without installing an agent or executing inside app containers.
-pub(super) fn collect(endpoint: &str) -> Result<HostMemory> {
+/// Reads host counters through transient infrastructure commands or a mounted file.
+pub(super) fn collect(endpoint: &str, proxy: Option<&str>) -> Result<HostMemory> {
     let contents = if let Some(path) = std::env::var_os("ROOTSTOCK_HOST_MEMINFO") {
         fs::read_to_string(path).context("reading mounted host memory counters")?
     } else if endpoint.starts_with("ssh://") {
@@ -29,6 +29,15 @@ pub(super) fn collect(endpoint: &str) -> Result<HostMemory> {
             );
         }
         String::from_utf8(output.stdout).context("reading Linux memory counters")?
+    } else if endpoint.starts_with("unix://")
+        && (cfg!(target_os = "macos")
+            || endpoint.ends_with("/.orbstack/run/docker.sock")
+            || endpoint.ends_with("/.docker/desktop/docker.sock"))
+    {
+        let proxy = proxy
+            .context("Host memory requires a running Rootstock socket proxy on this Docker VM")?;
+        String::from_utf8(docker(&["exec", proxy, "cat", "/proc/meminfo"])?)
+            .context("reading desktop VM memory counters")?
     } else if cfg!(target_os = "linux") && endpoint.starts_with("unix://") {
         fs::read_to_string("/proc/meminfo").context("reading local Linux memory counters")?
     } else {

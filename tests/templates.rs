@@ -53,7 +53,10 @@ fn dashboard_routes_require_authentication_without_publishing_a_backend_port() {
         "rootstock-dashboard-auth"
     );
     assert_eq!(
-        labels["traefik.http.middlewares.rootstock-dashboard-auth.basicauth.users"],
+        labels["traefik.http.middlewares.rootstock-dashboard-auth.basicauth.users"]
+            .as_str()
+            .unwrap()
+            .replace("$$", "$"),
         auth
     );
     assert_eq!(
