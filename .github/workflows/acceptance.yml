@@ -1,11 +1,11 @@
-name: Deployment
+name: Acceptance tests
 
 on:
   push:
     branches: [main]
-    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', '.github/workflows/deployment.yml']
+    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', '.github/workflows/acceptance.yml']
   pull_request:
-    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', '.github/workflows/deployment.yml']
+    paths: ['Cargo.*', 'src/**', 'templates/**', 'proxy/**', 'tests/**', '.github/workflows/acceptance.yml']
 
 jobs:
   acceptance:
