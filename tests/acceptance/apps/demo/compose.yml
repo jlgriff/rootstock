@@ -1,6 +1,6 @@
 services:
   website:
-    image: nginx:alpine
+    image: nginx:1.31.9-alpine
     profiles: [prod]
     volumes: ["./www/website:/usr/share/nginx/html:ro"]
     networks: [rootstock-proxy]
@@ -13,7 +13,7 @@ services:
       traefik.http.services.acceptance-website.loadbalancer.server.port: "80"
 
   api:
-    image: nginx:alpine
+    image: nginx:1.31.9-alpine
     profiles: [prod]
     volumes: ["./www/api:/usr/share/nginx/html:ro"]
     networks: [rootstock-proxy]

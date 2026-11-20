@@ -105,9 +105,9 @@ The web deployment template uses these Compose variables:
 | `APP_PORT` | No | Port the server listens on inside its container; defaults to `3000` |
 | `COMPOSE_PROJECT_NAME` | Automatic | Compose sets it from rootstock's `--project-name`; namespaces router and service labels |
 
-The template's `.env.example` uses `nginx:alpine` on port `80` as a runnable demonstration. Its
-floating tag is not a production release policy. Replace it with your application's versioned
-image and actual port. Missing or empty required variables fail during configuration resolution.
+The template's `.env.example` uses a versioned Nginx image on port `80` as a runnable demonstration.
+For your own application, set its versioned image and listening port. Missing or empty required
+variables fail during configuration resolution.
 
 Compose reads each application's `.env` for interpolation; exported shell variables take precedence.
 These values are not automatically sent into the container. Use Compose `environment` or `env_file`
