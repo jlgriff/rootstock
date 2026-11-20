@@ -29,7 +29,7 @@ fn claiming(host: &str) -> String {
     format!(
         r#"services:
   web:
-    image: nginx:alpine
+    image: nginx:1.31.9-alpine
     labels:
       traefik.enable: "true"
       traefik.http.routers.web.rule: "Host(`{host}`)"
@@ -159,7 +159,7 @@ fn a_service_that_opts_in_without_a_router_is_reported_by_name() {
     app(
         dir.path(),
         "broken",
-        "services:\n  web:\n    image: nginx:alpine\n    labels:\n      traefik.enable: \"true\"\n",
+        "services:\n  web:\n    image: nginx:1.31.9-alpine\n    labels:\n      traefik.enable: \"true\"\n",
         None,
     );
 

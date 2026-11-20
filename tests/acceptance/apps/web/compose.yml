@@ -1,6 +1,6 @@
 services:
   site:
-    image: nginx:alpine
+    image: nginx:1.31.9-alpine
     volumes: ["./www:/usr/share/nginx/html:ro"]
     networks: [rootstock-proxy]
     labels:

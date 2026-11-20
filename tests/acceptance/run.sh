@@ -106,7 +106,7 @@ mkdir -p "$apps/$ROOTSTOCK_ACCEPTANCE_RUN-rival"
 cat > "$apps/$ROOTSTOCK_ACCEPTANCE_RUN-rival/compose.yml" <<'CONF'
 services:
   rival:
-    image: nginx:alpine
+    image: nginx:1.31.9-alpine
     labels:
       traefik.enable: "true"
       traefik.http.routers.acceptance-rival.rule: "Host(`demo.test`)"
